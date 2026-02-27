@@ -1,0 +1,30 @@
+---
+# Group variables for HMC hosts
+# These variables apply to all hosts in the 'hmcs' group
+
+# HMC API Configuration
+hmc_api_version: "web"
+hmc_content_type: "application/vnd.ibm.powervm.web+xml"
+hmc_accept_type: "application/vnd.ibm.powervm.uom+xml"
+
+# Collection settings
+collect_managed_systems: true
+collect_lpars: true
+collect_adapters: true
+
+# Report generation settings
+generate_json: true
+generate_csv: true
+generate_yaml: true
+generate_html: true
+
+# Report timestamp format
+report_timestamp_format: "%Y-%m-%d_%H-%M-%S"
+
+# Data collection filters (optional - leave empty to collect all)
+# system_name_filter: ""
+# lpar_name_filter: ""
+
+# Retry settings for API calls
+api_retries: 3
+api_retry_delay: 5

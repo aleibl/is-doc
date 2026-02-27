@@ -1,0 +1,394 @@
+---
+# ============================================================================
+# Test Report Generation with Synthetic Data
+# ============================================================================
+#
+# Description:
+#   This playbook generates sample infrastructure reports using synthetic
+#   (fictitious) data. It's designed for testing report templates, validating
+#   output formats, and demonstrating report capabilities without requiring
+#   access to actual HMC infrastructure.
+#
+# Purpose:
+#   - Test report template rendering
+#   - Validate all output formats (JSON, CSV, YAML, HTML)
+#   - Demonstrate report features and layout
+#   - Provide sample data for development and testing
+#   - Verify system resource calculations
+#   - Test unassigned adapter handling
+#
+# Test Scenario:
+#   Managed System:
+#     - Name: power-e980-01 (IBM Power E980)
+#     - Model: 9080-M9S
+#     - Total Resources: 256 GB RAM, 16 CPU cores
+#     - Assigned: 128 GB RAM (50%), 10 CPU cores (62.5%)
+#     - Free: 128 GB RAM, 6 CPU cores
+#
+#   LPARs (4 total):
+#     1. vios1 (VIOS 3.1.4.21)
+#        - Dedicated processors (2 cores, share_idle_procs)
+#        - Memory: 8/16/32 GB (min/cur/max)
+#        - 4 physical adapters (2 FC + 2 Ethernet)
+#
+#     2. vios2 (VIOS 3.1.4.21)
+#        - Dedicated processors (2 cores, share_idle_procs)
+#        - Memory: 8/16/32 GB (min/cur/max)
+#        - 4 physical adapters (2 FC + 2 Ethernet)
+#
+#     3. aixprod1 (AIX 7.3.1.0) - Database Server
+#        - Shared uncapped processors (4 cores current, 2-8 range)
+#        - Memory: 32/64/128 GB (min/cur/max)
+#        - Fully virtualized (no physical adapters)
+#
+#     4. aixprod2 (AIX 7.3.1.0) - Application Server
+#        - Shared capped processors (2 cores current, 1-4 range)
+#        - Memory: 16/32/64 GB (min/cur/max)
+#        - Fully virtualized (no physical adapters)
+#
+#   Physical Adapters (10 total):
+#     - 8 assigned adapters (4 to vios1, 4 to vios2)
+#     - 2 unassigned adapters (fcs2, ent2)
+#     - Types: 4x 16Gb FC, 6x 10GbE Ethernet
+#
+# Features Demonstrated:
+#   - System resource summary tables
+#   - LPAR resource allocation (min/current/max)
+#   - Processor modes (dedicated vs shared)
+#   - Sharing modes (uncapped vs capped)
+#   - Physical adapter assignments
+#   - Unassigned adapter identification
+#   - Multi-format report generation
+#
+# Usage:
+#   ansible-playbook test_report_generation.yml
+#
+# Output:
+#   Files generated in ./output/reports/:
+#     - test_infrastructure_<timestamp>.json
+#     - test_infrastructure_<timestamp>.csv
+#     - test_infrastructure_<timestamp>.yml
+#     - test_infrastructure_<timestamp>.html
+#
+# Notes:
+#   - Runs on localhost (no HMC connection required)
+#   - Uses same templates as production playbooks
+#   - Data is completely synthetic for testing purposes
+#   - Useful for template development and validation
+# Version: See VERSION file in project root
+# Last Updated: 2026-02-27
+# ============================================================================
+
+- name: Test Report Generation with Synthetic Data
+  hosts: localhost
+  gather_facts: true
+  
+  vars:
+    project_version: "{{ lookup('file', 'VERSION') | trim }}"
+    collection_timestamp: "{{ ansible_facts['date_time']['iso8601'] }}"
+    report_timestamp: "{{ ansible_facts['date_time']['date'] }}_{{ ansible_facts['date_time']['time'] | replace(':', '-') }}"
+    inventory_hostname: "hmc-test.example.com"
+    hmc_description: "Test HMC - Synthetic Data"
+    output_dir: "./output/reports"
+    
+    # Generate JSON, CSV, YAML, and HTML reports
+    generate_json: true
+    generate_csv: true
+    generate_yaml: true
+    generate_html: true
+    
+    # Synthetic Managed System Data
+    managed_systems:
+      - hmc: "hmc-test.example.com"
+        name: "power-e980-01"
+        serial_number: "21A12BC"
+        mtms: "9080-M9S-21A12BC"
+        state: "operating"
+        firmware: "FW950.40"
+        description: "Production Power E980 System"
+        uuid: "sys-uuid-001"
+        # System-level resources
+        total_memory_mb: "262144"  # 256 GB total
+        total_proc_units: "16.0"   # 16 cores total
+        available_memory_mb: "131072"  # 128 GB available
+        available_proc_units: "6.0"    # 6 cores available
+    
+    # Synthetic LPAR Data
+    # 2 VIOS + 2 AIX LPARs with detailed resource allocation
+    all_lpars:
+      # VIOS 1 - Dedicated processors
+      - hmc: "hmc-test.example.com"
+        name: "vios1"
+        partition_id: "1"
+        serial_number: "21A12BC-V1"
+        description: "Virtual I/O Server 1"
+        state: "running"
+        os_version: "VIOS 3.1.4.21"
+        memory_mb: "16384"
+        memory_min_mb: "8192"
+        memory_max_mb: "32768"
+        processors: "2"
+        proc_min: "2"
+        proc_max: "4"
+        proc_units: "2.0"
+        proc_units_min: "2.0"
+        proc_units_max: "4.0"
+        proc_mode: "ded"
+        sharing_mode: "share_idle_procs"
+        uncapped: "false"
+        uuid: "lpar-uuid-001"
+        parent_system: "sys-uuid-001"
+      
+      # VIOS 2 - Dedicated processors
+      - hmc: "hmc-test.example.com"
+        name: "vios2"
+        partition_id: "2"
+        serial_number: "21A12BC-V2"
+        description: "Virtual I/O Server 2"
+        state: "running"
+        os_version: "VIOS 3.1.4.21"
+        memory_mb: "16384"
+        memory_min_mb: "8192"
+        memory_max_mb: "32768"
+        processors: "2"
+        proc_min: "2"
+        proc_max: "4"
+        proc_units: "2.0"
+        proc_units_min: "2.0"
+        proc_units_max: "4.0"
+        proc_mode: "ded"
+        sharing_mode: "share_idle_procs"
+        uncapped: "false"
+        uuid: "lpar-uuid-002"
+        parent_system: "sys-uuid-001"
+      
+      # AIX Production LPAR 1 - Uncapped shared
+      - hmc: "hmc-test.example.com"
+        name: "aixprod1"
+        partition_id: "10"
+        serial_number: "21A12BC-A1"
+        description: "AIX Production Database Server"
+        state: "running"
+        os_version: "AIX 7.3.1.0"
+        memory_mb: "65536"
+        memory_min_mb: "32768"
+        memory_max_mb: "131072"
+        processors: "8"
+        proc_min: "4"
+        proc_max: "16"
+        proc_units: "4.0"
+        proc_units_min: "2.0"
+        proc_units_max: "8.0"
+        proc_mode: "shared"
+        sharing_mode: "uncap"
+        uncapped: "true"
+        uuid: "lpar-uuid-010"
+        parent_system: "sys-uuid-001"
+      
+      # AIX Production LPAR 2 - Capped shared
+      - hmc: "hmc-test.example.com"
+        name: "aixprod2"
+        partition_id: "11"
+        serial_number: "21A12BC-A2"
+        description: "AIX Production Application Server"
+        state: "running"
+        os_version: "AIX 7.3.1.0"
+        memory_mb: "32768"
+        memory_min_mb: "16384"
+        memory_max_mb: "65536"
+        processors: "4"
+        proc_min: "2"
+        proc_max: "8"
+        proc_units: "2.0"
+        proc_units_min: "1.0"
+        proc_units_max: "4.0"
+        proc_mode: "shared"
+        sharing_mode: "cap"
+        uncapped: "false"
+        uuid: "lpar-uuid-011"
+        parent_system: "sys-uuid-001"
+    
+    # Synthetic Physical Adapter Data
+    # 4 adapters per VIOS (2 FC + 2 Ethernet)
+    all_adapters:
+      # VIOS1 - Fibre Channel Adapters
+      - hmc: "hmc-test.example.com"
+        adapter_id: "fcs0"
+        description: "16Gb FC Adapter"
+        physical_location: "U78DA.ND1.WZS00AA-P1-C3-T1"
+        drc_name: "U78DA.ND1.WZS00AA-P1-C3"
+        adapter_type: "Fibre Channel"
+        uuid: "adapter-uuid-001"
+        parent_system: "sys-uuid-001"
+        owner_lpar: "vios1"
+        owner_lpar_id: "1"
+      
+      - hmc: "hmc-test.example.com"
+        adapter_id: "fcs1"
+        description: "16Gb FC Adapter"
+        physical_location: "U78DA.ND1.WZS00AA-P1-C4-T1"
+        drc_name: "U78DA.ND1.WZS00AA-P1-C4"
+        adapter_type: "Fibre Channel"
+        uuid: "adapter-uuid-002"
+        parent_system: "sys-uuid-001"
+        owner_lpar: "vios1"
+        owner_lpar_id: "1"
+      
+      # VIOS1 - Ethernet Adapters
+      - hmc: "hmc-test.example.com"
+        adapter_id: "ent0"
+        description: "4-Port 10GbE Adapter"
+        physical_location: "U78DA.ND1.WZS00AA-P1-C5-T1"
+        drc_name: "U78DA.ND1.WZS00AA-P1-C5"
+        adapter_type: "Ethernet"
+        uuid: "adapter-uuid-003"
+        parent_system: "sys-uuid-001"
+        owner_lpar: "vios1"
+        owner_lpar_id: "1"
+      
+      - hmc: "hmc-test.example.com"
+        adapter_id: "ent1"
+        description: "4-Port 10GbE Adapter"
+        physical_location: "U78DA.ND1.WZS00AA-P1-C6-T1"
+        drc_name: "U78DA.ND1.WZS00AA-P1-C6"
+        adapter_type: "Ethernet"
+        uuid: "adapter-uuid-004"
+        parent_system: "sys-uuid-001"
+        owner_lpar: "vios1"
+        owner_lpar_id: "1"
+      
+      # VIOS2 - Fibre Channel Adapters
+      - hmc: "hmc-test.example.com"
+        adapter_id: "fcs0"
+        description: "16Gb FC Adapter"
+        physical_location: "U78DA.ND1.WZS00AA-P1-C7-T1"
+        drc_name: "U78DA.ND1.WZS00AA-P1-C7"
+        adapter_type: "Fibre Channel"
+        uuid: "adapter-uuid-005"
+        parent_system: "sys-uuid-001"
+        owner_lpar: "vios2"
+        owner_lpar_id: "2"
+      
+      - hmc: "hmc-test.example.com"
+        adapter_id: "fcs1"
+        description: "16Gb FC Adapter"
+        physical_location: "U78DA.ND1.WZS00AA-P1-C8-T1"
+        drc_name: "U78DA.ND1.WZS00AA-P1-C8"
+        adapter_type: "Fibre Channel"
+        uuid: "adapter-uuid-006"
+        parent_system: "sys-uuid-001"
+        owner_lpar: "vios2"
+        owner_lpar_id: "2"
+      
+      # VIOS2 - Ethernet Adapters
+      - hmc: "hmc-test.example.com"
+        adapter_id: "ent0"
+        description: "4-Port 10GbE Adapter"
+        physical_location: "U78DA.ND1.WZS00AA-P1-C9-T1"
+        drc_name: "U78DA.ND1.WZS00AA-P1-C9"
+        adapter_type: "Ethernet"
+        uuid: "adapter-uuid-007"
+        parent_system: "sys-uuid-001"
+        owner_lpar: "vios2"
+        owner_lpar_id: "2"
+      
+      - hmc: "hmc-test.example.com"
+        adapter_id: "ent1"
+        description: "4-Port 10GbE Adapter"
+        physical_location: "U78DA.ND1.WZS00AA-P1-C10-T1"
+        drc_name: "U78DA.ND1.WZS00AA-P1-C10"
+        adapter_type: "Ethernet"
+        uuid: "adapter-uuid-008"
+        parent_system: "sys-uuid-001"
+        owner_lpar: "vios2"
+        owner_lpar_id: "2"
+      
+      # Unassigned adapters (available for assignment)
+      - hmc: "hmc-test.example.com"
+        adapter_id: "fcs2"
+        description: "16Gb FC Adapter"
+        physical_location: "U78DA.ND1.WZS00AA-P1-C11-T1"
+        drc_name: "U78DA.ND1.WZS00AA-P1-C11"
+        adapter_type: "Fibre Channel"
+        uuid: "adapter-uuid-009"
+        parent_system: "sys-uuid-001"
+        owner_lpar: ""
+        owner_lpar_id: ""
+      
+      - hmc: "hmc-test.example.com"
+        adapter_id: "ent2"
+        description: "4-Port 10GbE Adapter"
+        physical_location: "U78DA.ND1.WZS00AA-P1-C12-T1"
+        drc_name: "U78DA.ND1.WZS00AA-P1-C12"
+        adapter_type: "Ethernet"
+        uuid: "adapter-uuid-010"
+        parent_system: "sys-uuid-001"
+        owner_lpar: ""
+        owner_lpar_id: ""
+  
+  tasks:
+    - name: Display test scenario information
+      ansible.builtin.debug:
+        msg:
+          - "=== Test Report Generation with Synthetic Data ==="
+          - "Managed Systems: {{ managed_systems | length }}"
+          - "LPARs: {{ all_lpars | length }} (2 VIOS + 2 AIX)"
+          - "Physical Adapters: {{ all_adapters | length }} (8 assigned + 2 unassigned)"
+          - "Output directory: {{ output_dir }}"
+    
+    - name: Ensure output directory exists
+      ansible.builtin.file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: '0755'
+    
+    - name: Set report filename base
+      ansible.builtin.set_fact:
+        report_base_name: "test_infrastructure_{{ report_timestamp }}"
+    
+    - name: Generate JSON report
+      ansible.builtin.template:
+        src: templates/infrastructure.json.j2
+        dest: "{{ output_dir }}/{{ report_base_name }}.json"
+        mode: '0644'
+      when: generate_json | default(true)
+    
+    - name: Generate CSV report
+      ansible.builtin.template:
+        src: templates/infrastructure.csv.j2
+        dest: "{{ output_dir }}/{{ report_base_name }}.csv"
+        mode: '0644'
+      when: generate_csv | default(true)
+    
+    - name: Generate YAML report
+      ansible.builtin.template:
+        src: templates/infrastructure.yml.j2
+        dest: "{{ output_dir }}/{{ report_base_name }}.yml"
+        mode: '0644'
+      when: generate_yaml | default(true)
+    
+    - name: Generate HTML report
+      ansible.builtin.template:
+        src: templates/infrastructure.html.j2
+        dest: "{{ output_dir }}/{{ report_base_name }}.html"
+        mode: '0644'
+      when: generate_html | default(true)
+    
+    - name: Display test results
+      ansible.builtin.debug:
+        msg:
+          - "=== Test Reports Generated Successfully ==="
+          - "Base filename: {{ report_base_name }}"
+          - "Location: {{ output_dir }}"
+          - ""
+          - "Generated files:"
+          - "  - {{ report_base_name }}.json"
+          - "  - {{ report_base_name }}.csv"
+          - "  - {{ report_base_name }}.yml"
+          - "  - {{ report_base_name }}.html"
+          - ""
+          - "Test Scenario Summary:"
+          - "  System: power-e980-01 (9080-M9S)"
+          - "  VIOS: vios1 (16GB, 2 cores) + vios2 (16GB, 2 cores)"
+          - "  AIX: aixprod1 (64GB, 8 cores) + aixprod2 (32GB, 4 cores)"
+          - "  Adapters: 4 FC (16Gb) + 4 Ethernet (10GbE)"

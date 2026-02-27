@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IBM Power Systems Infrastructure Report - {{ inventory_hostname }}</title>
+    <!--
+    ============================================================================
+    IBM Power Systems Infrastructure Report - HTML Format
+    ============================================================================
+    
+    Description:
+      Professional HTML report with visual presentation of IBM Power Systems
+      infrastructure. Includes system resource summaries, detailed LPAR views,
+      and comprehensive adapter listings.
+    
+    Features:
+      - System Resource Summary: Visual tables showing CPU/memory utilization
+      - Detailed LPAR View: Individual sections per LPAR with resource tables
+      - LPAR Summary Table: Compact overview of all LPARs
+      - Physical Adapter Listings: Complete adapter inventory with assignments
+      - Visual Badges: Color-coded processor modes and sharing modes
+      - Responsive Design: Works on desktop and mobile devices
+      - Professional Styling: IBM Carbon Design System inspired
+    
+    Sections:
+      1. Report Header: HMC info, collection timestamp, summary cards
+      2. Managed Systems: System details table
+      3. System Resource Summary: CPU/memory utilization per system
+      4. Detailed LPAR View: Individual LPAR sections with:
+         - Resource allocation tables (memory, vCPU, CPU units)
+         - Processor configuration badges
+         - Assigned physical adapters
+      5. LPAR Summary Table: Compact view of all LPARs
+      6. All Physical Adapters: Complete adapter inventory with owner info
+    
+    Visual Elements:
+      - Color-coded state indicators (green=running, yellow=other, red=error)
+      - Processor mode badges (blue=dedicated, green=shared)
+      - Sharing mode badges (red=uncapped, yellow=capped)
+      - Hover effects on table rows
+      - Professional color scheme
+    
+    Template Version: Dynamic (from VERSION file)
+    Generated: {{ collection_timestamp }}
+    ============================================================================
+    -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #0f62fe;
+            border-bottom: 3px solid #0f62fe;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #161616;
+            margin-top: 30px;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 5px;
+        }
+        h3 {
+            color: #393939;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+        .metadata {
+            background-color: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .summary {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .summary-card {
+            flex: 1;
+            background-color: #e8f4fd;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .summary-card h3 {
+            margin: 0;
+            color: #0f62fe;
+            font-size: 2em;
+        }
+        .summary-card p {
+            margin: 5px 0 0 0;
+            color: #525252;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+        th {
+            background-color: #0f62fe;
+            color: white;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: bold;
+            font-size: 0.85em;
+        }
+        td {
+            padding: 8px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        tr:hover {
+            background-color: #f4f4f4;
+        }
+        .state-running {
+            color: #24a148;
+            font-weight: bold;
+        }
+        .state-error {
+            color: #da1e28;
+            font-weight: bold;
+        }
+        .state-other {
+            color: #f1c21b;
+            font-weight: bold;
+        }
+        .lpar-section {
+            margin-bottom: 30px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-left: 4px solid #0f62fe;
+        }
+        .resource-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            margin: 2px;
+            border-radius: 3px;
+            font-size: 0.85em;
+            background-color: #e0e0e0;
+        }
+        .badge-dedicated {
+            background-color: #d0e2ff;
+            color: #0043ce;
+        }
+        .badge-shared {
+            background-color: #d2f4ea;
+            color: #0e6027;
+        }
+        .badge-uncapped {
+            background-color: #fff1f1;
+            color: #750e13;
+        }
+        .badge-capped {
+            background-color: #fcf4d6;
+            color: #684e00;
+        }
+        .resource-table {
+            margin: 10px 0;
+            font-size: 0.9em;
+        }
+        .resource-table td {
+            padding: 4px 8px;
+        }
+        .resource-label {
+            font-weight: bold;
+            color: #525252;
+            width: 120px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>IBM Power Systems Infrastructure Report</h1>
+        
+        <div class="metadata">
+            <strong>HMC:</strong> {{ inventory_hostname }}<br>
+            <strong>Description:</strong> {{ hmc_description | default('N/A') }}<br>
+            <strong>Collection Time:</strong> {{ collection_timestamp }}<br>
+        </div>
+
+        <div class="summary">
+            <div class="summary-card">
+                <h3>{{ managed_systems | default([]) | length }}</h3>
+                <p>Managed Systems</p>
+            </div>
+            <div class="summary-card">
+                <h3>{{ all_lpars | default([]) | length }}</h3>
+                <p>LPARs</p>
+            </div>
+            <div class="summary-card">
+                <h3>{{ all_adapters | default([]) | length }}</h3>
+                <p>Physical Adapters</p>
+            </div>
+        </div>
+
+        <h2>Managed Systems</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Serial Number</th>
+                    <th>MTMS</th>
+                    <th>State</th>
+                    <th>Firmware</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+{% for system in managed_systems | default([]) %}
+                <tr>
+                    <td>{{ system.name }}</td>
+                    <td>{{ system.serial_number }}</td>
+                    <td>{{ system.mtms }}</td>
+                    <td class="{% if system.state == 'operating' %}state-running{% elif system.state == 'error' %}state-error{% else %}state-other{% endif %}">{{ system.state }}</td>
+                    <td>{{ system.firmware }}</td>
+                    <td>{{ system.description }}</td>
+                </tr>
+{% endfor %}
+            </tbody>
+        </table>
+
+        <h2>System Resource Summary</h2>
+{% for system in managed_systems | default([]) %}
+{% set system_lpars = all_lpars | default([]) | selectattr('parent_system', 'defined') | selectattr('parent_system', 'equalto', system.uuid) | list %}
+{% set total_assigned_memory = system_lpars | map(attribute='memory_mb') | map('int') | sum %}
+{% set total_assigned_cpu = system_lpars | map(attribute='proc_units') | map('float') | sum %}
+{% set total_memory = system.total_memory_mb | default(0) | int %}
+{% set total_cpu = system.total_proc_units | default(0) | float %}
+{% set available_memory = system.available_memory_mb | default(0) | int %}
+{% set available_cpu = system.available_proc_units | default(0) | float %}
+{% set free_memory = total_memory - total_assigned_memory %}
+{% set free_cpu = total_cpu - total_assigned_cpu %}
+        <h3>{{ system.name }} ({{ system.mtms }})</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Resource Type</th>
+                    <th>Total</th>
+                    <th>Assigned to LPARs</th>
+                    <th>Free/Available</th>
+                    <th>Utilization</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Memory (MB)</strong></td>
+                    <td>{{ total_memory }}</td>
+                    <td>{{ total_assigned_memory }}</td>
+                    <td>{{ free_memory }}</td>
+                    <td>{{ "%.1f" | format((total_assigned_memory / total_memory * 100) if total_memory > 0 else 0) }}%</td>
+                </tr>
+                <tr>
+                    <td><strong>CPU (Processing Units)</strong></td>
+                    <td>{{ "%.2f" | format(total_cpu) }}</td>
+                    <td>{{ "%.2f" | format(total_assigned_cpu) }}</td>
+                    <td>{{ "%.2f" | format(free_cpu) }}</td>
+                    <td>{{ "%.1f" | format((total_assigned_cpu / total_cpu * 100) if total_cpu > 0 else 0) }}%</td>
+                </tr>
+                <tr>
+                    <td><strong>LPARs</strong></td>
+                    <td colspan="4">{{ system_lpars | length }} active partitions</td>
+                </tr>
+            </tbody>
+        </table>
+{% endfor %}
+
+        <h2>Logical Partitions (LPARs) - Detailed View</h2>
+{% for lpar in all_lpars | default([]) %}
+        <div class="lpar-section">
+            <h3>{{ lpar.name }} (LPAR ID: {{ lpar.partition_id }})
+                {% if lpar.proc_mode == 'ded' %}
+                <span class="resource-badge badge-dedicated">DEDICATED</span>
+                {% elif lpar.proc_mode == 'shared' %}
+                <span class="resource-badge badge-shared">SHARED</span>
+                {% endif %}
+                {% if lpar.uncapped == 'true' %}
+                <span class="resource-badge badge-uncapped">UNCAPPED</span>
+                {% elif lpar.uncapped == 'false' and lpar.proc_mode == 'shared' %}
+                <span class="resource-badge badge-capped">CAPPED</span>
+                {% endif %}
+            </h3>
+            <p><strong>Serial:</strong> {{ lpar.serial_number }} | <strong>OS:</strong> {{ lpar.os_version }} | <strong>State:</strong> <span class="{% if lpar.state == 'running' %}state-running{% else %}state-other{% endif %}">{{ lpar.state }}</span></p>
+            <p><strong>Description:</strong> {{ lpar.description }}</p>
+            
+            <table class="resource-table">
+                <tr>
+                    <td class="resource-label">Memory (MB):</td>
+                    <td><strong>Min:</strong> {{ lpar.memory_min_mb | default('N/A') }} | <strong>Current:</strong> {{ lpar.memory_mb }} | <strong>Max:</strong> {{ lpar.memory_max_mb | default('N/A') }}</td>
+                </tr>
+                <tr>
+                    <td class="resource-label">Virtual CPUs:</td>
+                    <td><strong>Min:</strong> {{ lpar.proc_min | default('N/A') }} | <strong>Current:</strong> {{ lpar.processors }} | <strong>Max:</strong> {{ lpar.proc_max | default('N/A') }}</td>
+                </tr>
+                <tr>
+                    <td class="resource-label">CPU Entitlement:</td>
+                    <td><strong>Min:</strong> {{ lpar.proc_units_min | default('N/A') }} | <strong>Current:</strong> {{ lpar.proc_units | default('N/A') }} | <strong>Max:</strong> {{ lpar.proc_units_max | default('N/A') }}</td>
+                </tr>
+                <tr>
+                    <td class="resource-label">Processor Mode:</td>
+                    <td>{{ lpar.proc_mode | default('N/A') | upper }} ({{ lpar.sharing_mode | default('N/A') }})</td>
+                </tr>
+            </table>
+
+{% set lpar_adapters = all_adapters | default([]) | selectattr('owner_lpar', 'defined') | selectattr('owner_lpar', 'equalto', lpar.name) | list %}
+{% if lpar_adapters | length > 0 %}
+            <h4>Physical Adapters ({{ lpar_adapters | length }})</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Adapter ID</th>
+                        <th>Type</th>
+                        <th>Physical Location</th>
+                        <th>DRC Name</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+{% for adapter in lpar_adapters %}
+                    <tr>
+                        <td>{{ adapter.adapter_id }}</td>
+                        <td>{{ adapter.adapter_type }}</td>
+                        <td>{{ adapter.physical_location }}</td>
+                        <td>{{ adapter.drc_name }}</td>
+                        <td>{{ adapter.description }}</td>
+                    </tr>
+{% endfor %}
+                </tbody>
+            </table>
+{% else %}
+            <p><em>No physical adapters assigned (fully virtualized)</em></p>
+{% endif %}
+        </div>
+{% endfor %}
+
+        <h2>LPAR Summary Table</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>ID</th>
+                    <th>State</th>
+                    <th>OS</th>
+                    <th>Memory (MB)<br><small>Min/Cur/Max</small></th>
+                    <th>vCPU<br><small>Min/Cur/Max</small></th>
+                    <th>CPU Units<br><small>Min/Cur/Max</small></th>
+                    <th>Mode</th>
+                </tr>
+            </thead>
+            <tbody>
+{% for lpar in all_lpars | default([]) %}
+                <tr>
+                    <td>{{ lpar.name }}</td>
+                    <td>{{ lpar.partition_id }}</td>
+                    <td class="{% if lpar.state == 'running' %}state-running{% else %}state-other{% endif %}">{{ lpar.state }}</td>
+                    <td>{{ lpar.os_version }}</td>
+                    <td>{{ lpar.memory_min_mb | default('N/A') }} / <strong>{{ lpar.memory_mb }}</strong> / {{ lpar.memory_max_mb | default('N/A') }}</td>
+                    <td>{{ lpar.proc_min | default('N/A') }} / <strong>{{ lpar.processors }}</strong> / {{ lpar.proc_max | default('N/A') }}</td>
+                    <td>{{ lpar.proc_units_min | default('N/A') }} / <strong>{{ lpar.proc_units | default('N/A') }}</strong> / {{ lpar.proc_units_max | default('N/A') }}</td>
+                    <td>
+                        {% if lpar.proc_mode == 'ded' %}
+                        <span class="resource-badge badge-dedicated">DED</span>
+                        {% elif lpar.proc_mode == 'shared' %}
+                        <span class="resource-badge badge-shared">SHR</span>
+                        {% endif %}
+                        {% if lpar.uncapped == 'true' %}
+                        <span class="resource-badge badge-uncapped">UNCAP</span>
+                        {% elif lpar.uncapped == 'false' and lpar.proc_mode == 'shared' %}
+                        <span class="resource-badge badge-capped">CAP</span>
+                        {% endif %}
+                    </td>
+                </tr>
+{% endfor %}
+            </tbody>
+        </table>
+
+        <h2>All Physical Adapters</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Adapter ID</th>
+                    <th>Type</th>
+                    <th>Physical Location</th>
+                    <th>DRC Name</th>
+                    <th>Description</th>
+                    <th>Owner LPAR</th>
+                </tr>
+            </thead>
+            <tbody>
+{% for adapter in all_adapters | default([]) %}
+                <tr>
+                    <td>{{ adapter.adapter_id }}</td>
+                    <td>{{ adapter.adapter_type }}</td>
+                    <td>{{ adapter.physical_location }}</td>
+                    <td>{{ adapter.drc_name }}</td>
+                    <td>{{ adapter.description }}</td>
+                    <td>
+{% if adapter.owner_lpar and adapter.owner_lpar != '' %}
+                        <strong>{{ adapter.owner_lpar }}</strong>
+{% else %}
+                        <span class="state-other"><strong>UNASSIGNED</strong></span>
+{% endif %}
+                    </td>
+                </tr>
+{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

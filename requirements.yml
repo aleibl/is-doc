@@ -1,0 +1,17 @@
+---
+# Ansible Galaxy Requirements
+# Install with: ansible-galaxy collection install -r requirements.yml
+
+collections:
+  # Core Ansible collections
+  - name: ansible.builtin
+    version: ">=2.10.0"
+  
+  # Community general collection for additional modules
+  - name: community.general
+    version: ">=3.0.0"
+  
+  # IBM Power HMC collection (for CLI-based playbook)
+  # Required only for collect_infrastructure_hmc_cli.yml
+  - name: ibm.power_hmc
+    version: ">=1.0.0"

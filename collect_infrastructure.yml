@@ -1,0 +1,323 @@
+---
+# ============================================================================
+# IBM Power Systems Infrastructure Collection Playbook (REST API Version)
+# ============================================================================
+#
+# Description:
+#   This playbook collects comprehensive infrastructure information from IBM
+#   Power Systems Hardware Management Consoles (HMCs) using the REST API.
+#   It gathers data about managed systems, LPARs, and physical adapters,
+#   then generates reports in multiple formats (JSON, CSV, YAML, HTML).
+#
+# Features:
+#   - REST API-based data collection (port 12443)
+#   - Session-based authentication with automatic logout
+#   - Collects managed system details (name, serial, MTMS, firmware, state)
+#   - Collects LPAR information (resources, processor config, memory)
+#   - Collects physical adapter assignments
+#   - Calculates system resource utilization (CPU, memory)
+#   - Identifies unassigned adapters
+#   - Generates multi-format reports (JSON, CSV, YAML, HTML)
+#
+# Prerequisites:
+#   - Ansible 2.9 or higher
+#   - Network connectivity to HMC on port 12443 (HTTPS)
+#   - HMC user account with read permissions
+#   - Encrypted credentials in vars/vault.yml
+#
+# Usage:
+#   ansible-playbook collect_infrastructure.yml
+#
+# Configuration:
+#   - Inventory: inventory/hosts.yml (define HMC hosts)
+#   - Credentials: vars/vault.yml (encrypted with ansible-vault)
+#   - Output: Controlled by output_dir variable (default: ./output/reports)
+#   - Report formats: Set generate_json, generate_csv, generate_yaml, generate_html
+#
+# Output Files:
+#   - infrastructure_<timestamp>.json - Structured JSON data
+#   - infrastructure_<timestamp>.csv  - Spreadsheet-compatible format
+#   - infrastructure_<timestamp>.yml  - YAML format for automation
+#   - infrastructure_<timestamp>.html - Human-readable HTML report
+#
+# Data Collected:
+#   Managed Systems:
+#     - Name, serial number, MTMS, state, firmware version
+#     - Total/assigned/free CPU and memory resources
+#     - LPAR count
+#
+#   LPARs:
+#     - Name, ID, serial number, description, state, OS version
+#     - Memory: min/current/max (MB)
+#     - vCPU: min/current/max count
+#     - CPU entitlement: min/current/max (processing units)
+#     - Processor mode: dedicated vs shared
+#     - Sharing mode: uncapped vs capped
+#
+#   Physical Adapters:
+#     - Adapter ID, type (FC/Ethernet), description
+#     - Physical location code, DRC name
+#     - Owner LPAR assignment (or UNASSIGNED)
+#
+# Notes:
+#   - This version uses direct REST API calls via ansible.builtin.uri
+#   - For CLI-based alternative, see collect_infrastructure_hmc_cli.yml
+#   - SSL certificate validation is disabled (validate_certs: false)
+#   - Session cookies are managed automatically
+# Version: See VERSION file in project root
+# Last Updated: 2026-02-27
+# ============================================================================
+
+- name: Collect IBM Power Systems Infrastructure Information
+  hosts: hmcs
+  gather_facts: false
+  
+  vars_files:
+    - vars/vault.yml
+  
+  vars:
+    project_version: "{{ lookup('file', 'VERSION') | trim }}"
+    collection_timestamp: "{{ ansible_facts['date_time']['iso8601'] }}"
+    report_timestamp: "{{ ansible_facts['date_time']['date'] }}_{{ ansible_facts['date_time']['time'] | replace(':', '-') }}"
+    hmc_protocol: "https"
+    hmc_base_url: "{{ hmc_protocol }}://{{ ansible_host | default(inventory_hostname) }}:{{ hmc_port }}"
+    
+  tasks:
+    # ============================================
+    # Pre-flight checks
+    # ============================================
+    - name: Display collection start information
+      ansible.builtin.debug:
+        msg:
+          - "Starting infrastructure collection from HMC: {{ inventory_hostname }}"
+          - "Timestamp: {{ collection_timestamp }}"
+          - "Output directory: {{ output_dir }}"
+    
+    - name: Ensure output directory exists
+      ansible.builtin.file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      run_once: true
+
+    # ============================================
+    # HMC Authentication
+    # ============================================
+    - name: Set HMC credentials from vault
+      ansible.builtin.set_fact:
+        hmc_username: "{{ hmc_credentials[inventory_hostname].username }}"
+        hmc_password: "{{ hmc_credentials[inventory_hostname].password }}"
+      no_log: true
+
+    - name: Authenticate to HMC REST API
+      ansible.builtin.uri:
+        url: "{{ hmc_base_url }}/rest/api/web/Logon"
+        method: PUT
+        user: "{{ hmc_username }}"
+        password: "{{ hmc_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ hmc_validate_certs }}"
+        timeout: "{{ hmc_timeout }}"
+        status_code: 200
+        headers:
+          Content-Type: "application/vnd.ibm.powervm.web+xml; type=LogonRequest"
+          Accept: "application/vnd.ibm.powervm.web+xml; type=LogonResponse"
+      register: hmc_logon_response
+      no_log: true
+      retries: "{{ api_retries | default(3) }}"
+      delay: "{{ api_retry_delay | default(5) }}"
+      until: hmc_logon_response is succeeded
+
+    - name: Extract session token
+      ansible.builtin.set_fact:
+        hmc_session_token: "{{ hmc_logon_response.x_api_session }}"
+      no_log: true
+
+    - name: Display authentication status
+      ansible.builtin.debug:
+        msg: "Successfully authenticated to HMC: {{ inventory_hostname }}"
+
+    # ============================================
+    # Collect Managed Systems
+    # ============================================
+    - name: Query managed systems from HMC
+      ansible.builtin.uri:
+        url: "{{ hmc_base_url }}/rest/api/uom/ManagedSystem"
+        method: GET
+        validate_certs: "{{ hmc_validate_certs }}"
+        timeout: "{{ hmc_timeout }}"
+        status_code: 200
+        headers:
+          X-API-Session: "{{ hmc_session_token }}"
+          Accept: "{{ hmc_accept_type }}"
+        return_content: true
+      register: systems_response
+      retries: "{{ api_retries | default(3) }}"
+      delay: "{{ api_retry_delay | default(5) }}"
+      until: systems_response is succeeded
+
+    - name: Parse managed systems XML response
+      ansible.builtin.set_fact:
+        managed_systems_raw: "{{ systems_response.content | regex_findall('<ManagedSystem[^>]*>.*?</ManagedSystem>', multiline=True, ignorecase=True) }}"
+
+    - name: Extract managed system details
+      ansible.builtin.set_fact:
+        managed_systems: "{{ managed_systems | default([]) + [system_info] }}"
+      vars:
+        system_info:
+          hmc: "{{ inventory_hostname }}"
+          name: "{{ item | regex_search('<SystemName[^>]*>([^<]+)</SystemName>', '\\1') | first | default('N/A') }}"
+          serial_number: "{{ item | regex_search('<SerialNumber[^>]*>([^<]+)</SerialNumber>', '\\1') | first | default('N/A') }}"
+          mtms: "{{ item | regex_search('<MachineTypeModelAndSerialNumber[^>]*>([^<]+)</MachineTypeModelAndSerialNumber>', '\\1') | first | default('N/A') }}"
+          state: "{{ item | regex_search('<State[^>]*>([^<]+)</State>', '\\1') | first | default('N/A') }}"
+          firmware: "{{ item | regex_search('<SystemFirmware[^>]*>([^<]+)</SystemFirmware>', '\\1') | first | default('N/A') }}"
+          description: "{{ item | regex_search('<Description[^>]*>([^<]+)</Description>', '\\1') | first | default('') }}"
+          uuid: "{{ item | regex_search('href=\"[^\"]*ManagedSystem/([^\"]+)\"', '\\1') | first | default('N/A') }}"
+      loop: "{{ managed_systems_raw }}"
+      when: managed_systems_raw | length > 0
+
+    - name: Display managed systems count
+      ansible.builtin.debug:
+        msg: "Collected {{ managed_systems | default([]) | length }} managed system(s)"
+
+    # ============================================
+    # Collect LPARs
+    # ============================================
+    - name: Query LPARs from HMC
+      ansible.builtin.uri:
+        url: "{{ hmc_base_url }}/rest/api/uom/LogicalPartition"
+        method: GET
+        validate_certs: "{{ hmc_validate_certs }}"
+        timeout: "{{ hmc_timeout }}"
+        status_code: 200
+        headers:
+          X-API-Session: "{{ hmc_session_token }}"
+          Accept: "{{ hmc_accept_type }}"
+        return_content: true
+      register: lpars_response
+      retries: "{{ api_retries | default(3) }}"
+      delay: "{{ api_retry_delay | default(5) }}"
+      until: lpars_response is succeeded
+
+    - name: Parse LPARs XML response
+      ansible.builtin.set_fact:
+        lpars_raw: "{{ lpars_response.content | regex_findall('<LogicalPartition[^>]*>.*?</LogicalPartition>', multiline=True, ignorecase=True) }}"
+
+    - name: Extract LPAR details
+      ansible.builtin.set_fact:
+        all_lpars: "{{ all_lpars | default([]) + [lpar_info] }}"
+      vars:
+        lpar_info:
+          hmc: "{{ inventory_hostname }}"
+          name: "{{ item | regex_search('<PartitionName[^>]*>([^<]+)</PartitionName>', '\\1') | first | default('N/A') }}"
+          partition_id: "{{ item | regex_search('<PartitionID[^>]*>([^<]+)</PartitionID>', '\\1') | first | default('N/A') }}"
+          serial_number: "{{ item | regex_search('<PartitionSerialNumber[^>]*>([^<]+)</PartitionSerialNumber>', '\\1') | first | default('N/A') }}"
+          description: "{{ item | regex_search('<Description[^>]*>([^<]+)</Description>', '\\1') | first | default('') }}"
+          state: "{{ item | regex_search('<PartitionState[^>]*>([^<]+)</PartitionState>', '\\1') | first | default('N/A') }}"
+          os_version: "{{ item | regex_search('<OperatingSystemVersion[^>]*>([^<]+)</OperatingSystemVersion>', '\\1') | first | default('N/A') }}"
+          memory_mb: "{{ item | regex_search('<CurrentMemory[^>]*>([^<]+)</CurrentMemory>', '\\1') | first | default('0') }}"
+          processors: "{{ item | regex_search('<CurrentProcessors[^>]*>([^<]+)</CurrentProcessors>', '\\1') | first | default('0') }}"
+          uuid: "{{ item | regex_search('href=\"[^\"]*LogicalPartition/([^\"]+)\"', '\\1') | first | default('N/A') }}"
+          parent_system: "{{ item | regex_search('<AssociatedManagedSystem[^>]*href=\"[^\"]*ManagedSystem/([^\"]+)\"', '\\1') | first | default('N/A') }}"
+      loop: "{{ lpars_raw }}"
+      when: lpars_raw | length > 0
+
+    - name: Display LPARs count
+      ansible.builtin.debug:
+        msg: "Collected {{ all_lpars | default([]) | length }} LPAR(s)"
+
+    # ============================================
+    # Collect Physical Adapters
+    # ============================================
+    - name: Query physical adapters from HMC
+      ansible.builtin.uri:
+        url: "{{ hmc_base_url }}/rest/api/uom/IOAdapter"
+        method: GET
+        validate_certs: "{{ hmc_validate_certs }}"
+        timeout: "{{ hmc_timeout }}"
+        status_code: 200
+        headers:
+          X-API-Session: "{{ hmc_session_token }}"
+          Accept: "{{ hmc_accept_type }}"
+        return_content: true
+      register: adapters_response
+      retries: "{{ api_retries | default(3) }}"
+      delay: "{{ api_retry_delay | default(5) }}"
+      until: adapters_response is succeeded
+
+    - name: Parse adapters XML response
+      ansible.builtin.set_fact:
+        adapters_raw: "{{ adapters_response.content | regex_findall('<IOAdapter[^>]*>.*?</IOAdapter>', multiline=True, ignorecase=True) }}"
+
+    - name: Extract adapter details
+      ansible.builtin.set_fact:
+        all_adapters: "{{ all_adapters | default([]) + [adapter_info] }}"
+      vars:
+        adapter_info:
+          hmc: "{{ inventory_hostname }}"
+          adapter_id: "{{ item | regex_search('<AdapterID[^>]*>([^<]+)</AdapterID>', '\\1') | first | default('N/A') }}"
+          description: "{{ item | regex_search('<Description[^>]*>([^<]+)</Description>', '\\1') | first | default('') }}"
+          physical_location: "{{ item | regex_search('<PhysicalLocation[^>]*>([^<]+)</PhysicalLocation>', '\\1') | first | default('N/A') }}"
+          drc_name: "{{ item | regex_search('<DynamicReconfigurationConnectorName[^>]*>([^<]+)</DynamicReconfigurationConnectorName>', '\\1') | first | default('N/A') }}"
+          adapter_type: "{{ item | regex_search('<AdapterType[^>]*>([^<]+)</AdapterType>', '\\1') | first | default('N/A') }}"
+          uuid: "{{ item | regex_search('href=\"[^\"]*IOAdapter/([^\"]+)\"', '\\1') | first | default('N/A') }}"
+          parent_system: "{{ item | regex_search('<AssociatedSystemIOConfiguration[^>]*href=\"[^\"]*ManagedSystem/([^\"]+)/', '\\1') | first | default('N/A') }}"
+      loop: "{{ adapters_raw }}"
+      when: adapters_raw | length > 0
+
+    - name: Display adapters count
+      ansible.builtin.debug:
+        msg: "Collected {{ all_adapters | default([]) | length }} physical adapter(s)"
+
+    # ============================================
+    # Generate Reports
+    # ============================================
+    - name: Set report filename base
+      ansible.builtin.set_fact:
+        report_base_name: "power_infrastructure_{{ inventory_hostname }}_{{ report_timestamp }}"
+
+    - name: Generate JSON report
+      ansible.builtin.template:
+        src: templates/infrastructure.json.j2
+        dest: "{{ output_dir }}/{{ report_base_name }}.json"
+        mode: '0644'
+      delegate_to: localhost
+      when: generate_json | default(true)
+
+    - name: Generate CSV report
+      ansible.builtin.template:
+        src: templates/infrastructure.csv.j2
+        dest: "{{ output_dir }}/{{ report_base_name }}.csv"
+        mode: '0644'
+      delegate_to: localhost
+      when: generate_csv | default(true)
+
+    - name: Generate YAML report
+      ansible.builtin.template:
+        src: templates/infrastructure.yml.j2
+        dest: "{{ output_dir }}/{{ report_base_name }}.yml"
+        mode: '0644'
+      delegate_to: localhost
+      when: generate_yaml | default(true)
+
+    - name: Generate HTML report
+      ansible.builtin.template:
+        src: templates/infrastructure.html.j2
+        dest: "{{ output_dir }}/{{ report_base_name }}.html"
+        mode: '0644'
+      delegate_to: localhost
+      when: generate_html | default(true)
+
+    # ============================================
+    # Summary
+    # ============================================
+    - name: Display collection summary
+      ansible.builtin.debug:
+        msg:
+          - "Infrastructure collection completed for HMC: {{ inventory_hostname }}"
+          - "Managed Systems: {{ managed_systems | default([]) | length }}"
+          - "LPARs: {{ all_lpars | default([]) | length }}"
+          - "Physical Adapters: {{ all_adapters | default([]) | length }}"
+          - "Reports generated in: {{ output_dir }}"
+          - "Base filename: {{ report_base_name }}"

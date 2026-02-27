@@ -1,0 +1,58 @@
+# ============================================================================
+# IBM Power Systems Infrastructure Report - CSV Format
+# ============================================================================
+#
+# Description:
+#   Comma-separated values format for easy import into spreadsheets and
+#   databases. Each row represents an LPAR with its associated adapter
+#   (or empty adapter fields for fully virtualized LPARs). Unassigned
+#   adapters are listed with "UNASSIGNED" in LPAR fields.
+#
+# Features:
+#   - 28 columns covering system, LPAR, and adapter information
+#   - LPAR resource allocation (min/current/max for memory, vCPU, CPU units)
+#   - Processor configuration (dedicated/shared, capped/uncapped)
+#   - Physical adapter assignments
+#   - Unassigned adapters marked as "UNASSIGNED"
+#   - Compatible with Excel, Google Sheets, and database imports
+#
+# Column Definitions:
+#   System Columns (1-5):
+#     HMC, System_Name, System_Serial, System_MTMS, System_State
+#
+#   LPAR Columns (6-23):
+#     LPAR_Name, LPAR_ID, LPAR_Serial, LPAR_Description, LPAR_State, LPAR_OS
+#     Mem_Current_MB, Mem_Min_MB, Mem_Max_MB
+#     vCPU_Current, vCPU_Min, vCPU_Max
+#     CPU_Units_Current, CPU_Units_Min, CPU_Units_Max
+#     Proc_Mode, Sharing_Mode, Uncapped
+#
+#   Adapter Columns (24-28):
+#     Adapter_ID, Adapter_Type, Adapter_Location, Adapter_DRC,
+#     Adapter_Description, Adapter_Owner_LPAR
+#
+# Notes:
+#   - LPARs with multiple adapters appear on multiple rows
+#   - Fully virtualized LPARs have empty adapter columns
+#   - Unassigned adapters have "UNASSIGNED" in LPAR_Name column
+#   - Commas in descriptions are replaced with semicolons
+#
+# Template Version: {{ project_version }}
+# ============================================================================
+HMC,System_Name,System_Serial,System_MTMS,System_State,LPAR_Name,LPAR_ID,LPAR_Serial,LPAR_Description,LPAR_State,LPAR_OS,Mem_Current_MB,Mem_Min_MB,Mem_Max_MB,vCPU_Current,vCPU_Min,vCPU_Max,CPU_Units_Current,CPU_Units_Min,CPU_Units_Max,Proc_Mode,Sharing_Mode,Uncapped,Adapter_ID,Adapter_Type,Adapter_Location,Adapter_DRC,Adapter_Description,Adapter_Owner_LPAR
+{% for lpar in all_lpars | default([]) %}
+{% set system = managed_systems | default([]) | selectattr('uuid', 'equalto', lpar.parent_system) | first | default({}) %}
+{% set lpar_adapters = all_adapters | default([]) | selectattr('owner_lpar', 'defined') | selectattr('owner_lpar', 'equalto', lpar.name) | list %}
+{% if lpar_adapters | length > 0 %}
+{% for adapter in lpar_adapters %}
+{{ inventory_hostname }},{{ system.name | default('N/A') }},{{ system.serial_number | default('N/A') }},{{ system.mtms | default('N/A') }},{{ system.state | default('N/A') }},{{ lpar.name }},{{ lpar.partition_id }},{{ lpar.serial_number }},{{ lpar.description | replace(',', ';') }},{{ lpar.state }},{{ lpar.os_version }},{{ lpar.memory_mb }},{{ lpar.memory_min_mb | default('N/A') }},{{ lpar.memory_max_mb | default('N/A') }},{{ lpar.processors }},{{ lpar.proc_min | default('N/A') }},{{ lpar.proc_max | default('N/A') }},{{ lpar.proc_units | default('N/A') }},{{ lpar.proc_units_min | default('N/A') }},{{ lpar.proc_units_max | default('N/A') }},{{ lpar.proc_mode | default('N/A') }},{{ lpar.sharing_mode | default('N/A') }},{{ lpar.uncapped | default('N/A') }},{{ adapter.adapter_id }},{{ adapter.adapter_type }},{{ adapter.physical_location }},{{ adapter.drc_name }},{{ adapter.description | replace(',', ';') }},{{ adapter.owner_lpar }}
+{% endfor %}
+{% else %}
+{{ inventory_hostname }},{{ system.name | default('N/A') }},{{ system.serial_number | default('N/A') }},{{ system.mtms | default('N/A') }},{{ system.state | default('N/A') }},{{ lpar.name }},{{ lpar.partition_id }},{{ lpar.serial_number }},{{ lpar.description | replace(',', ';') }},{{ lpar.state }},{{ lpar.os_version }},{{ lpar.memory_mb }},{{ lpar.memory_min_mb | default('N/A') }},{{ lpar.memory_max_mb | default('N/A') }},{{ lpar.processors }},{{ lpar.proc_min | default('N/A') }},{{ lpar.proc_max | default('N/A') }},{{ lpar.proc_units | default('N/A') }},{{ lpar.proc_units_min | default('N/A') }},{{ lpar.proc_units_max | default('N/A') }},{{ lpar.proc_mode | default('N/A') }},{{ lpar.sharing_mode | default('N/A') }},{{ lpar.uncapped | default('N/A') }},,,,,,,
+{% endif %}
+{% endfor %}
+{% set unassigned_adapters = all_adapters | default([]) | rejectattr('owner_lpar', 'defined') | list + all_adapters | default([]) | selectattr('owner_lpar', 'defined') | selectattr('owner_lpar', 'equalto', '') | list %}
+{% for adapter in unassigned_adapters %}
+{% set system = managed_systems | default([]) | selectattr('uuid', 'equalto', adapter.parent_system) | first | default({}) %}
+{{ inventory_hostname }},{{ system.name | default('N/A') }},{{ system.serial_number | default('N/A') }},{{ system.mtms | default('N/A') }},{{ system.state | default('N/A') }},UNASSIGNED,,,,,,,,,,,,,,,,,,,{{ adapter.adapter_id }},{{ adapter.adapter_type }},{{ adapter.physical_location }},{{ adapter.drc_name }},{{ adapter.description | replace(',', ';') }},UNASSIGNED
+{% endfor %}

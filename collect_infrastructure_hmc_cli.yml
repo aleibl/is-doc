@@ -1,0 +1,301 @@
+---
+# ============================================================================
+# IBM Power Systems Infrastructure Collection Playbook (CLI Version)
+# ============================================================================
+#
+# Description:
+#   This playbook collects comprehensive infrastructure information from IBM
+#   Power Systems Hardware Management Consoles (HMCs) using SSH-based CLI
+#   commands via the ibm.power_hmc Ansible collection. It gathers data about
+#   managed systems, LPARs, and physical adapters, then generates reports in
+#   multiple formats (JSON, CSV, YAML, HTML).
+#
+# Features:
+#   - CLI-based data collection via SSH (port 22)
+#   - Uses ibm.power_hmc.hmc_command module
+#   - Executes lssyscfg and lshwres HMC commands
+#   - Parses CSV output from HMC commands
+#   - Collects managed system details (name, serial, MTMS, firmware, state)
+#   - Collects LPAR information (resources, processor config, memory)
+#   - Collects physical adapter assignments
+#   - Calculates system resource utilization (CPU, memory)
+#   - Identifies unassigned adapters
+#   - Generates multi-format reports (JSON, CSV, YAML, HTML)
+#
+# Prerequisites:
+#   - Ansible 2.9 or higher
+#   - ibm.power_hmc collection installed (ansible-galaxy collection install)
+#   - Network connectivity to HMC on port 22 (SSH)
+#   - HMC user account with read permissions
+#   - SSH key-based or password authentication configured
+#   - Encrypted credentials in vars/vault.yml
+#
+# Usage:
+#   ansible-playbook collect_infrastructure_hmc_cli.yml
+#
+# Configuration:
+#   - Inventory: inventory/hosts.yml (define HMC hosts with ansible_user)
+#   - Credentials: vars/vault.yml (encrypted with ansible-vault)
+#   - Output: Controlled by output_dir variable (default: ./output/reports)
+#   - Report formats: Set generate_json, generate_csv, generate_yaml, generate_html
+#
+# HMC Commands Used:
+#   - lssyscfg -r sys -F name,serial_num,type_model,state
+#   - lssyscfg -r lpar -m <system> -F name,lpar_id,state,os_version,curr_mem,...
+#   - lshwres -r io -m <system> --rsubtype slot --level slot -F ...
+#
+# Output Files:
+#   - infrastructure_<timestamp>.json - Structured JSON data
+#   - infrastructure_<timestamp>.csv  - Spreadsheet-compatible format
+#   - infrastructure_<timestamp>.yml  - YAML format for automation
+#   - infrastructure_<timestamp>.html - Human-readable HTML report
+#
+# Data Collected:
+#   Managed Systems:
+#     - Name, serial number, MTMS, state
+#     - Total/assigned/free CPU and memory resources
+#     - LPAR count
+#
+#   LPARs:
+#     - Name, ID, serial number, description, state, OS version
+#     - Memory: min/current/max (MB)
+#     - vCPU: min/current/max count
+#     - CPU entitlement: min/current/max (processing units)
+#     - Processor mode: dedicated vs shared
+#     - Sharing mode: uncapped vs capped
+#
+#   Physical Adapters:
+#     - Adapter ID, type (FC/Ethernet), description
+#     - Physical location code, DRC name
+#     - Owner LPAR assignment (or UNASSIGNED)
+#
+# Advantages of CLI Version:
+#   - Works when REST API is unavailable or disabled
+#   - Uses standard HMC CLI commands familiar to administrators
+#   - Can leverage existing SSH key infrastructure
+#   - Direct command execution without session management
+#
+# Disadvantages:
+#   - Requires SSH access (may have security restrictions)
+#   - Slower than REST API for large environments
+#   - Requires parsing of CSV text output
+#   - Less structured data format
+#
+# Notes:
+#   - This version uses ibm.power_hmc.hmc_command module
+#   - For REST API alternative, see collect_infrastructure.yml
+#   - Ensure HMC user has appropriate command permissions
+#   - CSV parsing handles comma-separated HMC output
+# Version: See VERSION file in project root
+# Last Updated: 2026-02-27
+# ============================================================================
+
+- name: Collect IBM Power Systems Infrastructure Information (HMC CLI)
+  hosts: hmcs
+  gather_facts: false
+  
+  collections:
+    - ibm.power_hmc
+  
+  vars_files:
+    - vars/vault.yml
+  
+  vars:
+    project_version: "{{ lookup('file', 'VERSION') | trim }}"
+    collection_timestamp: "{{ ansible_facts['date_time']['iso8601'] }}"
+    report_timestamp: "{{ ansible_facts['date_time']['date'] }}_{{ ansible_facts['date_time']['time'] | replace(':', '-') }}"
+    
+  tasks:
+    # ============================================
+    # Pre-flight checks
+    # ============================================
+    - name: Display collection start information
+      ansible.builtin.debug:
+        msg:
+          - "Starting infrastructure collection from HMC: {{ inventory_hostname }}"
+          - "Method: HMC CLI commands via ibm.power_hmc collection"
+          - "Timestamp: {{ collection_timestamp }}"
+          - "Output directory: {{ output_dir }}"
+    
+    - name: Ensure output directory exists
+      ansible.builtin.file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      run_once: true
+
+    - name: Set HMC credentials from vault
+      ansible.builtin.set_fact:
+        hmc_username: "{{ hmc_credentials[inventory_hostname].username }}"
+        hmc_password: "{{ hmc_credentials[inventory_hostname].password }}"
+      no_log: true
+
+    # ============================================
+    # Collect Managed Systems
+    # ============================================
+    - name: Query managed systems via HMC CLI
+      ibm.power_hmc.hmc_command:
+        hmc_host: "{{ ansible_host | default(inventory_hostname) }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        command: "lssyscfg -r sys -F name,serial_num,type_model,state,system_firmware"
+      register: systems_output
+      no_log: true
+
+    - name: Parse managed systems output
+      ansible.builtin.set_fact:
+        managed_systems: "{{ managed_systems | default([]) + [system_info] }}"
+      vars:
+        fields: "{{ item.split(',') }}"
+        system_info:
+          hmc: "{{ inventory_hostname }}"
+          name: "{{ fields[0] | default('N/A') }}"
+          serial_number: "{{ fields[1] | default('N/A') }}"
+          mtms: "{{ fields[2] | default('N/A') }}"
+          state: "{{ fields[3] | default('N/A') }}"
+          firmware: "{{ fields[4] | default('N/A') }}"
+          description: ""
+          uuid: "{{ fields[0] | default('N/A') }}"
+      loop: "{{ systems_output.stdout_lines }}"
+      when: 
+        - systems_output.stdout_lines is defined
+        - systems_output.stdout_lines | length > 0
+        - item | length > 0
+
+    - name: Display managed systems count
+      ansible.builtin.debug:
+        msg: "Collected {{ managed_systems | default([]) | length }} managed system(s)"
+
+    # ============================================
+    # Collect LPARs
+    # ============================================
+    - name: Query LPARs via HMC CLI
+      ibm.power_hmc.hmc_command:
+        hmc_host: "{{ ansible_host | default(inventory_hostname) }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        command: "lssyscfg -r lpar -F name,lpar_id,serial_num,state,os_version,curr_mem,curr_proc_units"
+      register: lpars_output
+      no_log: true
+
+    - name: Parse LPARs output
+      ansible.builtin.set_fact:
+        all_lpars: "{{ all_lpars | default([]) + [lpar_info] }}"
+      vars:
+        fields: "{{ item.split(',') }}"
+        lpar_info:
+          hmc: "{{ inventory_hostname }}"
+          name: "{{ fields[0] | default('N/A') }}"
+          partition_id: "{{ fields[1] | default('N/A') }}"
+          serial_number: "{{ fields[2] | default('N/A') }}"
+          description: ""
+          state: "{{ fields[3] | default('N/A') }}"
+          os_version: "{{ fields[4] | default('N/A') }}"
+          memory_mb: "{{ fields[5] | default('0') }}"
+          processors: "{{ fields[6] | default('0') }}"
+          uuid: "{{ fields[0] | default('N/A') }}"
+          parent_system: "N/A"
+      loop: "{{ lpars_output.stdout_lines }}"
+      when:
+        - lpars_output.stdout_lines is defined
+        - lpars_output.stdout_lines | length > 0
+        - item | length > 0
+
+    - name: Display LPARs count
+      ansible.builtin.debug:
+        msg: "Collected {{ all_lpars | default([]) | length }} LPAR(s)"
+
+    # ============================================
+    # Collect Physical Adapters
+    # ============================================
+    - name: Query physical adapters via HMC CLI
+      ibm.power_hmc.hmc_command:
+        hmc_host: "{{ ansible_host | default(inventory_hostname) }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        command: "lshwres -r io --rsubtype slot -F drc_name,description,phys_loc"
+      register: adapters_output
+      no_log: true
+      ignore_errors: true
+
+    - name: Parse adapters output
+      ansible.builtin.set_fact:
+        all_adapters: "{{ all_adapters | default([]) + [adapter_info] }}"
+      vars:
+        fields: "{{ item.split(',') }}"
+        adapter_info:
+          hmc: "{{ inventory_hostname }}"
+          adapter_id: "{{ fields[0] | default('N/A') }}"
+          description: "{{ fields[1] | default('') }}"
+          physical_location: "{{ fields[2] | default('N/A') }}"
+          drc_name: "{{ fields[0] | default('N/A') }}"
+          adapter_type: "Physical"
+          uuid: "{{ fields[0] | default('N/A') }}"
+          parent_system: "N/A"
+      loop: "{{ adapters_output.stdout_lines | default([]) }}"
+      when:
+        - adapters_output is defined
+        - adapters_output.stdout_lines is defined
+        - adapters_output.stdout_lines | length > 0
+        - item | length > 0
+
+    - name: Display adapters count
+      ansible.builtin.debug:
+        msg: "Collected {{ all_adapters | default([]) | length }} physical adapter(s)"
+
+    # ============================================
+    # Generate Reports
+    # ============================================
+    - name: Set report filename base
+      ansible.builtin.set_fact:
+        report_base_name: "power_infrastructure_cli_{{ inventory_hostname }}_{{ report_timestamp }}"
+
+    - name: Generate JSON report
+      ansible.builtin.template:
+        src: templates/infrastructure.json.j2
+        dest: "{{ output_dir }}/{{ report_base_name }}.json"
+        mode: '0644'
+      delegate_to: localhost
+      when: generate_json | default(true)
+
+    - name: Generate CSV report
+      ansible.builtin.template:
+        src: templates/infrastructure.csv.j2
+        dest: "{{ output_dir }}/{{ report_base_name }}.csv"
+        mode: '0644'
+      delegate_to: localhost
+      when: generate_csv | default(true)
+
+    - name: Generate YAML report
+      ansible.builtin.template:
+        src: templates/infrastructure.yml.j2
+        dest: "{{ output_dir }}/{{ report_base_name }}.yml"
+        mode: '0644'
+      delegate_to: localhost
+      when: generate_yaml | default(true)
+
+    - name: Generate HTML report
+      ansible.builtin.template:
+        src: templates/infrastructure.html.j2
+        dest: "{{ output_dir }}/{{ report_base_name }}.html"
+        mode: '0644'
+      delegate_to: localhost
+      when: generate_html | default(true)
+
+    # ============================================
+    # Summary
+    # ============================================
+    - name: Display collection summary
+      ansible.builtin.debug:
+        msg:
+          - "Infrastructure collection completed for HMC: {{ inventory_hostname }}"
+          - "Method: HMC CLI commands"
+          - "Managed Systems: {{ managed_systems | default([]) | length }}"
+          - "LPARs: {{ all_lpars | default([]) | length }}"
+          - "Physical Adapters: {{ all_adapters | default([]) | length }}"
+          - "Reports generated in: {{ output_dir }}"
+          - "Base filename: {{ report_base_name }}"

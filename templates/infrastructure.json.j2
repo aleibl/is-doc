@@ -1,0 +1,133 @@
+{
+  "_comment": "IBM Power Systems Infrastructure Report - JSON Format",
+  "_description": "Structured JSON output containing managed systems, LPARs, and physical adapters with resource allocation details",
+  "_generated_by": "IBM Power Systems Infrastructure Collection Playbook",
+  "_template_version": "{{ project_version }}",
+  "_features": [
+    "System resource summary (total/assigned/free CPU and memory)",
+    "LPAR resource allocation (min/current/max for memory, vCPU, CPU units)",
+    "Processor configuration (dedicated/shared, capped/uncapped)",
+    "Physical adapter assignments with owner LPAR tracking",
+    "Unassigned adapter identification",
+    "Hierarchical data structure for easy parsing"
+  ],
+  "collection_metadata": {
+    "timestamp": "{{ collection_timestamp }}",
+    "hmc": "{{ inventory_hostname }}",
+    "hmc_description": "{{ hmc_description | default('') }}"
+  },
+  "managed_systems": [
+{% for system in managed_systems | default([]) %}
+{% set system_lpars = all_lpars | default([]) | selectattr('parent_system', 'defined') | selectattr('parent_system', 'equalto', system.uuid) | list %}
+{% set total_assigned_memory = system_lpars | map(attribute='memory_mb') | map('int') | sum %}
+{% set total_assigned_cpu = system_lpars | map(attribute='proc_units') | map('float') | sum %}
+    {
+      "name": "{{ system.name }}",
+      "serial_number": "{{ system.serial_number }}",
+      "mtms": "{{ system.mtms }}",
+      "state": "{{ system.state }}",
+      "firmware": "{{ system.firmware }}",
+      "description": "{{ system.description }}",
+      "uuid": "{{ system.uuid }}",
+      "resources": {
+        "memory_mb": {
+          "total": {{ system.total_memory_mb | default(0) }},
+          "assigned": {{ total_assigned_memory }},
+          "free": {{ (system.total_memory_mb | default(0) | int) - total_assigned_memory }}
+        },
+        "cpu_units": {
+          "total": {{ system.total_proc_units | default(0) }},
+          "assigned": {{ "%.2f" | format(total_assigned_cpu) }},
+          "free": {{ "%.2f" | format((system.total_proc_units | default(0) | float) - total_assigned_cpu) }}
+        },
+        "lpars": {
+          "count": {{ system_lpars | length }}
+        }
+      }
+    }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+  ],
+  "lpars": [
+{% for lpar in all_lpars | default([]) %}
+    {
+      "name": "{{ lpar.name }}",
+      "partition_id": "{{ lpar.partition_id }}",
+      "serial_number": "{{ lpar.serial_number }}",
+      "description": "{{ lpar.description }}",
+      "state": "{{ lpar.state }}",
+      "os_version": "{{ lpar.os_version }}",
+      "memory": {
+        "current_mb": "{{ lpar.memory_mb }}",
+        "min_mb": "{{ lpar.memory_min_mb | default('N/A') }}",
+        "max_mb": "{{ lpar.memory_max_mb | default('N/A') }}"
+      },
+      "processors": {
+        "current_vcpu": "{{ lpar.processors }}",
+        "min_vcpu": "{{ lpar.proc_min | default('N/A') }}",
+        "max_vcpu": "{{ lpar.proc_max | default('N/A') }}",
+        "current_units": "{{ lpar.proc_units | default('N/A') }}",
+        "min_units": "{{ lpar.proc_units_min | default('N/A') }}",
+        "max_units": "{{ lpar.proc_units_max | default('N/A') }}",
+        "mode": "{{ lpar.proc_mode | default('N/A') }}",
+        "sharing_mode": "{{ lpar.sharing_mode | default('N/A') }}",
+        "uncapped": "{{ lpar.uncapped | default('N/A') }}"
+      },
+      "uuid": "{{ lpar.uuid }}",
+      "parent_system": "{{ lpar.parent_system }}"
+    }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+  ],
+  "physical_adapters": [
+{% for adapter in all_adapters | default([]) %}
+    {
+      "adapter_id": "{{ adapter.adapter_id }}",
+      "description": "{{ adapter.description }}",
+      "physical_location": "{{ adapter.physical_location }}",
+      "drc_name": "{{ adapter.drc_name }}",
+      "adapter_type": "{{ adapter.adapter_type }}",
+      "uuid": "{{ adapter.uuid }}",
+      "parent_system": "{{ adapter.parent_system }}",
+      "owner_lpar": "{{ adapter.owner_lpar | default('N/A') }}",
+      "owner_lpar_id": "{{ adapter.owner_lpar_id | default('N/A') }}"
+    }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+  ],
+  "adapters_by_lpar": {
+{% for lpar in all_lpars | default([]) %}
+    "{{ lpar.name }}": [
+{% for adapter in all_adapters | default([]) | selectattr('owner_lpar', 'defined') | selectattr('owner_lpar', 'equalto', lpar.name) %}
+      {
+        "adapter_id": "{{ adapter.adapter_id }}",
+        "adapter_type": "{{ adapter.adapter_type }}",
+        "description": "{{ adapter.description }}",
+        "physical_location": "{{ adapter.physical_location }}"
+      }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+    ]{% if not loop.last %},{% endif %}
+
+{% endfor %}
+{% set unassigned_adapters = all_adapters | default([]) | rejectattr('owner_lpar', 'defined') | list + all_adapters | default([]) | selectattr('owner_lpar', 'defined') | selectattr('owner_lpar', 'equalto', '') | list %}
+{% if unassigned_adapters | length > 0 %},
+    "unassigned": [
+{% for adapter in unassigned_adapters %}
+      {
+        "adapter_id": "{{ adapter.adapter_id }}",
+        "adapter_type": "{{ adapter.adapter_type }}",
+        "description": "{{ adapter.description }}",
+        "physical_location": "{{ adapter.physical_location }}"
+      }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+    ]
+{% endif %}
+  },
+  "summary": {
+    "total_systems": {{ managed_systems | default([]) | length }},
+    "total_lpars": {{ all_lpars | default([]) | length }},
+    "total_adapters": {{ all_adapters | default([]) | length }}
+  }
+}

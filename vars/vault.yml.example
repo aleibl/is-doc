@@ -1,0 +1,31 @@
+---
+# Ansible Vault Template for HMC Credentials
+# 
+# To use this file:
+# 1. Copy this file to vars/vault.yml
+# 2. Replace the example values with your actual HMC credentials
+# 3. Encrypt the file using: ansible-vault encrypt vars/vault.yml
+# 4. Create a .vault_pass file with your vault password (add to .gitignore)
+#
+# To edit encrypted vault: ansible-vault edit vars/vault.yml
+# To view encrypted vault: ansible-vault view vars/vault.yml
+
+# HMC Credentials
+# Define credentials for each HMC in your inventory
+hmc_credentials:
+  hmc01.example.com:
+    username: "hscroot"
+    password: "your_secure_password_here"
+  
+  hmc02.example.com:
+    username: "hscroot"
+    password: "your_secure_password_here"
+  
+  # Add more HMCs as needed
+  # hmc03.example.com:
+  #   username: "hscroot"
+  #   password: "your_secure_password_here"
+
+# Alternative: Single credential for all HMCs (if they share the same credentials)
+# hmc_default_username: "hscroot"
+# hmc_default_password: "your_secure_password_here"
