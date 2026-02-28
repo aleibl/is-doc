@@ -1,0 +1,105 @@
+---
+# ============================================================================
+# S3 Upload Persistence Task
+# ============================================================================
+#
+# Description:
+#   Uploads generated reports to S3-compatible storage.
+#   Supports AWS S3, MinIO, and other S3-compatible services.
+#
+# Prerequisites:
+#   - Reports already generated and written to local filesystem
+#   - S3 credentials configured (via AAP credentials or vault)
+#   - amazon.aws collection installed
+#
+# Configuration Required:
+#   - s3_bucket: Target S3 bucket name
+#   - s3_region: AWS region (or MinIO region)
+#   - s3_credentials: Access key and secret key (optional if using IAM role)
+#
+# Optional Configuration:
+#   - s3_endpoint_url: For MinIO or custom S3 endpoints
+#   - s3_path_prefix: Path prefix for organizing reports
+#   - s3_encryption: Enable server-side encryption (default: true)
+#   - s3_storage_class: STANDARD, INTELLIGENT_TIERING, GLACIER, etc.
+#
+# Version: See VERSION file in project root
+# ============================================================================
+
+- name: Validate S3 configuration
+  ansible.builtin.assert:
+    that:
+      - s3_bucket is defined
+      - s3_bucket | length > 0
+      - s3_region is defined
+    fail_msg: "S3 upload enabled but configuration incomplete. Required: s3_bucket, s3_region"
+
+- name: Set S3 credentials from vault
+  ansible.builtin.set_fact:
+    s3_access_key: "{{ s3_credentials.access_key }}"
+    s3_secret_key: "{{ s3_credentials.secret_key }}"
+  when: s3_credentials is defined
+  no_log: true
+
+- name: Set S3 path for reports
+  ansible.builtin.set_fact:
+    s3_report_path: "{{ s3_path_prefix | default('reports/' + ansible_date_time.date) }}/{{ inventory_hostname }}"
+
+- name: Upload reports to S3
+  amazon.aws.s3_object:
+    bucket: "{{ s3_bucket }}"
+    object: "{{ s3_report_path }}/infrastructure_{{ report_timestamp }}.{{ item }}"
+    src: "{{ output_dir }}/infrastructure_{{ report_timestamp }}.{{ item }}"
+    mode: put
+    encrypt: "{{ s3_encryption | default(true) }}"
+    storage_class: "{{ s3_storage_class | default('STANDARD') }}"
+    acl: "{{ s3_acl | default('private') }}"
+    metadata:
+      collection_timestamp: "{{ collection_timestamp | default(ansible_date_time.iso8601) }}"
+      hmc_name: "{{ inventory_hostname }}"
+      version: "{{ project_version }}"
+      format: "{{ item }}"
+      generated_by: "ansible-power-infrastructure-collection"
+  loop:
+    - json
+    - csv
+    - yml
+    - html
+  when: 
+    - (item == 'json' and generate_json | default(true)) or
+      (item == 'csv' and generate_csv | default(true)) or
+      (item == 'yml' and generate_yaml | default(true)) or
+      (item == 'html' and generate_html | default(true))
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ s3_access_key | default(omit) }}"
+    AWS_SECRET_ACCESS_KEY: "{{ s3_secret_key | default(omit) }}"
+    AWS_DEFAULT_REGION: "{{ s3_region }}"
+    AWS_ENDPOINT_URL: "{{ s3_endpoint_url | default(omit) }}"
+  register: s3_upload_results
+  retries: 3
+  delay: 5
+  until: s3_upload_results is succeeded
+  delegate_to: localhost
+
+- name: Set S3 upload success flag
+  ansible.builtin.set_fact:
+    s3_upload_success: true
+
+- name: Display S3 upload summary
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "S3 Upload"
+      - "=========================================="
+      - "Status: SUCCESS"
+      - "Bucket: {{ s3_bucket }}"
+      - "Region: {{ s3_region }}"
+      - "Path: {{ s3_report_path }}/"
+      - "Files Uploaded: {{ s3_upload_results.results | selectattr('changed') | list | length }}"
+      - "Storage Class: {{ s3_storage_class | default('STANDARD') }}"
+      - "Encryption: {{ 'Enabled' if s3_encryption | default(true) else 'Disabled' }}"
+      - ""
+      - "Access reports:"
+      - "  aws s3 ls s3://{{ s3_bucket }}/{{ s3_report_path }}/"
+      - "  aws s3 cp s3://{{ s3_bucket }}/{{ s3_report_path }}/infrastructure_{{ report_timestamp }}.json ."
+      - "=========================================="

@@ -373,6 +373,18 @@
         dest: "{{ output_dir }}/{{ report_base_name }}.html"
         mode: '0644'
       when: generate_html | default(true)
+    # ============================================
+    # Detect execution environment
+    # ============================================
+    - name: Detect execution environment (CLI vs AAP)
+      ansible.builtin.include_tasks: tasks/detect_environment.yml
+
+    # ============================================
+    # Persist reports using configured methods
+    # ============================================
+    - name: Persist reports to configured destinations
+      ansible.builtin.include_tasks: tasks/persist_reports.yml
+
     
     - name: Display test results
       ansible.builtin.debug:

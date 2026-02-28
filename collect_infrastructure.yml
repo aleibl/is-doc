@@ -308,6 +308,20 @@
         mode: '0644'
       delegate_to: localhost
       when: generate_html | default(true)
+    # ============================================
+    # Detect execution environment
+    # ============================================
+    - name: Detect execution environment (CLI vs AAP)
+      ansible.builtin.include_tasks: tasks/detect_environment.yml
+      run_once: true
+
+    # ============================================
+    # Persist reports using configured methods
+    # ============================================
+    - name: Persist reports to configured destinations
+      ansible.builtin.include_tasks: tasks/persist_reports.yml
+      run_once: true
+
 
     # ============================================
     # Summary

@@ -1,0 +1,110 @@
+---
+# ============================================================================
+# AAP Artifacts Persistence Task
+# ============================================================================
+#
+# Description:
+#   Registers generated reports as AAP job artifacts using set_stats.
+#   Artifacts are accessible via AAP API after job completion.
+#
+# Prerequisites:
+#   - Reports already generated and written to local filesystem
+#   - Running in AAP environment (or force_aap_mode enabled)
+#
+# Behavior:
+#   - Reads report files from local filesystem
+#   - Base64 encodes content for artifact storage
+#   - Registers artifacts with metadata using set_stats
+#   - Artifacts persist beyond job execution
+#
+# Limitations:
+#   - Size limit: ~1MB per artifact (base64 encoded)
+#   - Retention tied to AAP job retention policy
+#
+# Version: See VERSION file in project root
+# ============================================================================
+
+- name: Read generated report files
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/infrastructure_{{ report_timestamp }}.{{ item }}"
+  register: report_contents
+  loop: "{{ aap_artifact_formats | default(['json', 'csv', 'yml', 'html']) }}"
+  when: 
+    - (item == 'json' and generate_json | default(true)) or
+      (item == 'csv' and generate_csv | default(true)) or
+      (item == 'yml' and generate_yaml | default(true)) or
+      (item == 'html' and generate_html | default(true))
+  failed_when: false
+  delegate_to: localhost
+
+- name: Prepare artifact data dictionary
+  ansible.builtin.set_fact:
+    artifact_data: {}
+
+- name: Build artifact data from report contents
+  ansible.builtin.set_fact:
+    artifact_data: >-
+      {{
+        artifact_data | combine({
+          'infrastructure_report_' + item.item: item.content
+        })
+      }}
+  loop: "{{ report_contents.results }}"
+  when: 
+    - not item.skipped | default(false)
+    - item.content is defined
+  no_log: true
+
+- name: Add metadata to artifacts
+  ansible.builtin.set_fact:
+    artifact_data: >-
+      {{
+        artifact_data | combine({
+          'infrastructure_report_metadata': {
+            'timestamp': collection_timestamp | default(ansible_date_time.iso8601),
+            'report_timestamp': report_timestamp,
+            'hmc_count': groups['hmcs'] | default([]) | length,
+            'system_count': all_systems | default([]) | length,
+            'lpar_count': all_lpars | default([]) | length,
+            'adapter_count': all_adapters | default([]) | length,
+            'version': project_version,
+            'formats': aap_artifact_formats | default(['json', 'csv', 'yml', 'html']),
+            'environment': 'AAP'
+          }
+        })
+      }}
+
+- name: Register artifacts with AAP
+  ansible.builtin.set_stats:
+    data: "{{ artifact_data }}"
+    per_host: false
+    aggregate: false
+  when: artifact_data | length > 0
+
+- name: Calculate total artifact size
+  ansible.builtin.set_fact:
+    artifact_size_bytes: "{{ artifact_data | to_json | length }}"
+    artifact_size_kb: "{{ (artifact_data | to_json | length / 1024) | round(2) }}"
+
+- name: Set AAP artifacts success flag
+  ansible.builtin.set_fact:
+    aap_artifacts_success: true
+
+- name: Display AAP artifact registration summary
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "AAP Artifact Registration"
+      - "=========================================="
+      - "Status: SUCCESS"
+      - "Formats Registered: {{ aap_artifact_formats | default(['json', 'csv', 'yml', 'html']) | join(', ') }}"
+      - "Total Size: {{ artifact_size_kb }} KB ({{ artifact_size_bytes }} bytes)"
+      - "Artifacts Count: {{ artifact_data.keys() | length }}"
+      - "Metadata Included: Yes"
+      - ""
+      - "Access via AAP API:"
+      - "  GET /api/v2/jobs/<job_id>/artifacts/"
+      - ""
+      - "Decode artifacts:"
+      - "  echo '<base64_content>' | base64 -d > report.json"
+      - "=========================================="

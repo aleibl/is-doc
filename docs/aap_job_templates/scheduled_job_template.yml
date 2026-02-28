@@ -1,0 +1,102 @@
+---
+# ============================================================================
+# Scheduled AAP Job Template
+# ============================================================================
+#
+# Description:
+#   Job template configured for scheduled execution (daily at 2 AM).
+#   Includes notifications for success and failure.
+#
+# Prerequisites:
+#   - Notification templates configured in AAP
+#   - S3 Credentials configured (optional)
+#
+# Usage:
+#   Import via AAP UI or API
+#   Configure schedule after import
+#
+# ============================================================================
+
+name: "Collect Power Infrastructure - Scheduled Daily"
+description: "Daily scheduled collection of Power infrastructure (2 AM)"
+job_type: "run"
+inventory: "Power Systems HMCs"
+project: "IBM Power Infrastructure Collection"
+playbook: "collect_infrastructure.yml"
+
+# Credentials
+credentials:
+  - "HMC Credentials"
+  - "S3 Credentials"  # Optional
+
+# Execution Environment
+execution_environment: "Default execution environment"
+
+# Variables
+extra_vars:
+  # AAP Artifacts
+  enable_aap_artifacts: true
+  aap_artifact_formats:
+    - json
+    - csv
+  
+  # S3 Upload (recommended for scheduled jobs)
+  enable_s3_upload: true
+  s3_bucket: "power-infrastructure-reports"
+  s3_region: "us-east-1"
+  s3_path_prefix: "reports/{{ ansible_date_time.date }}"
+  s3_storage_class: "INTELLIGENT_TIERING"  # Cost-effective for scheduled jobs
+  
+  # Git Repository (disabled for daily runs to avoid repo bloat)
+  enable_git_commit: false
+  
+  # Report formats (minimal for scheduled jobs)
+  generate_json: true
+  generate_csv: true
+  generate_yaml: false
+  generate_html: false
+
+# Options
+ask_variables_on_launch: false
+ask_limit_on_launch: false
+ask_tags_on_launch: false
+ask_skip_tags_on_launch: false
+ask_job_type_on_launch: false
+ask_verbosity_on_launch: false
+ask_inventory_on_launch: false
+ask_credential_on_launch: false
+
+# Concurrency
+forks: 10  # Higher for scheduled jobs
+job_slice_count: 1
+timeout: 3600  # 1 hour timeout
+verbosity: 0
+
+# Job Control
+allow_simultaneous: false
+use_fact_cache: true  # Enable for better performance
+
+# Notifications
+notification_templates_started:
+  - "Slack - Job Started"
+
+notification_templates_success:
+  - "Slack - Job Success"
+  - "Email - Daily Report Summary"
+
+notification_templates_error:
+  - "PagerDuty - Job Failed"
+  - "Email - Job Failure Alert"
+
+# Schedule Configuration
+# Note: Configure this in AAP UI after importing template
+# 
+# Schedule Name: "Daily at 2 AM UTC"
+# RRULE: DTSTART:20260301T020000Z RRULE:FREQ=DAILY
+# Timezone: UTC
+# Enabled: true
+#
+# Alternative schedules:
+# - Weekly (Sunday 2 AM): DTSTART:20260301T020000Z RRULE:FREQ=WEEKLY;BYDAY=SU
+# - Monthly (1st day 2 AM): DTSTART:20260301T020000Z RRULE:FREQ=MONTHLY;BYMONTHDAY=1
+# - Hourly: DTSTART:20260301T000000Z RRULE:FREQ=HOURLY

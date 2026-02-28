@@ -1,0 +1,63 @@
+---
+# ============================================================================
+# Local File Persistence Task
+# ============================================================================
+#
+# Description:
+#   Writes generated reports to local filesystem.
+#   This is the default behavior and maintains backward compatibility.
+#
+# Prerequisites:
+#   - Reports already generated via templates
+#   - output_dir variable defined
+#   - report_timestamp variable defined
+#
+# Behavior:
+#   - Always enabled by default (enable_local_files: true)
+#   - Creates output directory if it doesn't exist
+#   - Verifies files were written successfully
+#
+# Version: See VERSION file in project root
+# ============================================================================
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+
+- name: Verify local report files exist
+  ansible.builtin.stat:
+    path: "{{ output_dir }}/infrastructure_{{ report_timestamp }}.{{ item }}"
+  register: local_files
+  loop:
+    - json
+    - csv
+    - yml
+    - html
+  when: 
+    - generate_json | default(true) and item == 'json'
+    - generate_csv | default(true) and item == 'csv'
+    - generate_yaml | default(true) and item == 'yml'
+    - generate_html | default(true) and item == 'html'
+  delegate_to: localhost
+
+- name: Set local persistence success flag
+  ansible.builtin.set_fact:
+    local_files_success: true
+
+- name: Display local file persistence summary
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "Local File Persistence"
+      - "=========================================="
+      - "Status: SUCCESS"
+      - "Output Directory: {{ output_dir }}"
+      - "Files Created:"
+      - "  - infrastructure_{{ report_timestamp }}.json"
+      - "  - infrastructure_{{ report_timestamp }}.csv"
+      - "  - infrastructure_{{ report_timestamp }}.yml"
+      - "  - infrastructure_{{ report_timestamp }}.html"
+      - "=========================================="

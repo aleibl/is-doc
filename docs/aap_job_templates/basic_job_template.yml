@@ -1,0 +1,58 @@
+---
+# ============================================================================
+# Basic AAP Job Template
+# ============================================================================
+#
+# Description:
+#   Simple job template for collecting Power infrastructure with default
+#   settings. Uses AAP artifacts only.
+#
+# Usage:
+#   Import via AAP UI or API
+#
+# ============================================================================
+
+name: "Collect Power Infrastructure - Basic"
+description: "Collect infrastructure information from IBM Power HMCs using default settings"
+job_type: "run"
+inventory: "Power Systems HMCs"
+project: "IBM Power Infrastructure Collection"
+playbook: "collect_infrastructure.yml"
+
+# Credentials
+credentials:
+  - "HMC Credentials"
+
+# Execution Environment
+execution_environment: "Default execution environment"
+
+# Variables
+extra_vars:
+  # AAP Artifacts (enabled by default in AAP)
+  enable_aap_artifacts: true
+  
+  # Report formats
+  generate_json: true
+  generate_csv: true
+  generate_yaml: true
+  generate_html: true
+
+# Options
+ask_variables_on_launch: false
+ask_limit_on_launch: true
+ask_tags_on_launch: false
+ask_skip_tags_on_launch: false
+ask_job_type_on_launch: false
+ask_verbosity_on_launch: false
+ask_inventory_on_launch: false
+ask_credential_on_launch: false
+
+# Concurrency
+forks: 5
+job_slice_count: 1
+timeout: 0
+verbosity: 0
+
+# Job Control
+allow_simultaneous: false
+use_fact_cache: false
