@@ -15,3 +15,8 @@ collections:
   # Required only for collect_infrastructure_hmc_cli.yml
   - name: ibm.power_hmc
     version: ">=1.0.0"
+  
+  # Amazon AWS collection (for S3 upload functionality)
+  # Required only if enable_s3_upload is true
+  - name: amazon.aws
+    version: ">=5.0.0"

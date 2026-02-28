@@ -1,0 +1,54 @@
+---
+# ============================================================================
+# Environment Detection Task
+# ============================================================================
+#
+# Description:
+#   Detects whether the playbook is running in CLI or AAP environment.
+#   Sets the is_aap_environment fact for conditional logic.
+#
+# Detection Methods:
+#   1. Check for /runner directory (AAP execution environment marker)
+#   2. Check for AAP environment variables (ANSIBLE_RUNNER_DIR, AWX_*)
+#   3. Allow manual override via force_aap_mode variable
+#
+# Output:
+#   - is_aap_environment: Boolean fact (true for AAP, false for CLI)
+#
+# Version: See VERSION file in project root
+# ============================================================================
+
+- name: Check for AAP execution environment markers
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: aap_markers
+  loop:
+    - /runner
+    - /runner/project
+    - /runner/inventory
+  failed_when: false
+
+- name: Check for AAP environment variables
+  ansible.builtin.set_fact:
+    has_aap_env_vars: "{{ lookup('env', 'ANSIBLE_RUNNER_DIR') != '' or lookup('env', 'AWX_HOST') != '' }}"
+
+- name: Determine execution environment
+  ansible.builtin.set_fact:
+    is_aap_environment: >-
+      {{
+        force_aap_mode | default(false) or
+        (aap_markers.results | selectattr('stat.exists', 'defined') | selectattr('stat.exists') | list | length > 0) or
+        has_aap_env_vars
+      }}
+
+- name: Display environment information
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "Execution Environment Detection"
+      - "=========================================="
+      - "Environment: {{ 'AAP (Ansible Automation Platform)' if is_aap_environment else 'CLI (Command Line)' }}"
+      - "Force AAP Mode: {{ force_aap_mode | default(false) }}"
+      - "AAP Markers Found: {{ aap_markers.results | selectattr('stat.exists', 'defined') | selectattr('stat.exists') | list | length }}"
+      - "AAP Env Vars Present: {{ has_aap_env_vars }}"
+      - "=========================================="

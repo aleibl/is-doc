@@ -1,0 +1,128 @@
+---
+# ============================================================================
+# Advanced AAP Job Template (All Output Methods)
+# ============================================================================
+#
+# Description:
+#   Advanced job template with all output methods enabled:
+#   - AAP Artifacts (immediate access)
+#   - S3 Upload (long-term storage)
+#   - Git Commit (version control)
+#
+# Prerequisites:
+#   - S3 Credentials configured in AAP
+#   - Git Repository Credentials configured in AAP
+#   - S3 bucket created
+#   - Git repository created
+#
+# Usage:
+#   Import via AAP UI or API
+#
+# ============================================================================
+
+name: "Collect Power Infrastructure - Advanced"
+description: "Collect infrastructure with all output methods (AAP artifacts, S3, Git)"
+job_type: "run"
+inventory: "Power Systems HMCs"
+project: "IBM Power Infrastructure Collection"
+playbook: "collect_infrastructure.yml"
+
+# Credentials
+credentials:
+  - "HMC Credentials"
+  - "S3 Credentials"
+  - "Git Repository Credentials"
+
+# Execution Environment
+execution_environment: "Default execution environment"
+
+# Variables
+extra_vars:
+  # AAP Artifacts
+  enable_aap_artifacts: true
+  aap_artifact_formats:
+    - json
+    - csv
+    - yml
+    - html
+  
+  # S3 Upload
+  enable_s3_upload: true
+  s3_bucket: "power-infrastructure-reports"
+  s3_region: "us-east-1"
+  s3_path_prefix: "reports/{{ ansible_date_time.date }}"
+  s3_encryption: true
+  s3_storage_class: "STANDARD"
+  
+  # Git Repository
+  enable_git_commit: true
+  git_repo_url: "git@github.com:org/power-reports.git"
+  git_branch: "automated-reports"
+  git_author_name: "Ansible Automation Platform"
+  git_author_email: "aap@example.com"
+  
+  # Report formats
+  generate_json: true
+  generate_csv: true
+  generate_yaml: true
+  generate_html: true
+
+# Options
+ask_variables_on_launch: true
+ask_limit_on_launch: true
+ask_tags_on_launch: false
+ask_skip_tags_on_launch: false
+ask_job_type_on_launch: false
+ask_verbosity_on_launch: true
+ask_inventory_on_launch: false
+ask_credential_on_launch: false
+
+# Concurrency
+forks: 5
+job_slice_count: 1
+timeout: 3600  # 1 hour timeout
+verbosity: 0
+
+# Job Control
+allow_simultaneous: false
+use_fact_cache: false
+
+# Survey (Optional - uncomment to enable)
+# survey_enabled: true
+# survey_spec:
+#   name: "Output Configuration"
+#   description: "Configure output methods"
+#   spec:
+#     - question_name: "Enable S3 Upload"
+#       question_description: "Upload reports to S3 bucket"
+#       variable: "enable_s3_upload"
+#       type: "multiplechoice"
+#       choices:
+#         - "true"
+#         - "false"
+#       default: "true"
+#       required: true
+#     
+#     - question_name: "Enable Git Commit"
+#       question_description: "Commit reports to Git repository"
+#       variable: "enable_git_commit"
+#       type: "multiplechoice"
+#       choices:
+#         - "true"
+#         - "false"
+#       default: "true"
+#       required: true
+#     
+#     - question_name: "S3 Bucket"
+#       question_description: "S3 bucket name for report storage"
+#       variable: "s3_bucket"
+#       type: "text"
+#       default: "power-infrastructure-reports"
+#       required: false
+#     
+#     - question_name: "Git Branch"
+#       question_description: "Git branch for commits"
+#       variable: "git_branch"
+#       type: "text"
+#       default: "automated-reports"
+#       required: false

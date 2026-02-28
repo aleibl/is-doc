@@ -13,6 +13,7 @@ Both generate comprehensive reports in multiple formats (JSON, CSV, YAML, HTML) 
 - **Single Playbook Design**: All logic in one file - no complex role structure
 - **Secure Credentials**: Ansible Vault encryption for HMC passwords
 - **Multiple Output Formats**: JSON, CSV, YAML, and HTML reports
+- **AAP Compatible**: Works seamlessly on Ansible Automation Platform with multiple output methods
 - **Comprehensive Data**: Collects systems, LPARs, and physical adapter information
 
 ## Which Version to Use?
@@ -270,6 +271,81 @@ This playbook uses the following HMC REST API endpoints:
 - `GET /rest/api/uom/ManagedSystem` - Managed systems
 - `GET /rest/api/uom/LogicalPartition` - LPARs
 - `GET /rest/api/uom/IOAdapter` - Physical adapters
+## Ansible Automation Platform (AAP) Compatibility
+
+This project is fully compatible with Ansible Automation Platform 2.x with automatic environment detection and multiple output methods.
+
+### Key Features
+
+✅ **Automatic Detection** - Playbooks detect AAP environment and adapt automatically  
+✅ **Multiple Output Methods** - AAP artifacts, S3, Git, or local files  
+✅ **Zero Configuration** - Works out-of-the-box with sensible defaults  
+✅ **Backward Compatible** - CLI usage unchanged  
+
+### Output Methods
+
+| Method | CLI | AAP | Best For |
+|--------|-----|-----|----------|
+| **Local Files** | ✅ Default | ✅ Optional | Development, debugging |
+| **AAP Artifacts** | ❌ N/A | ✅ Auto | Immediate access via API |
+| **S3 Upload** | ✅ Optional | ✅ Optional | Long-term storage |
+| **Git Commit** | ✅ Optional | ✅ Optional | Version control, audit trail |
+
+### Quick Start (AAP)
+
+1. **Import Project** into AAP from Git repository
+2. **Create Inventory** with HMC hosts
+3. **Configure Credentials** (HMC, S3, Git as needed)
+4. **Create Job Template** using provided examples
+5. **Run Job** and access reports via AAP artifacts or configured storage
+
+### Configuration
+
+Enable output methods in `inventory/group_vars/hmcs.yml`:
+
+```yaml
+# AAP Artifacts (automatic in AAP environment)
+enable_aap_artifacts: auto  # auto|true|false
+
+# S3 Upload (optional)
+enable_s3_upload: false
+s3_bucket: "power-infrastructure-reports"
+s3_region: "us-east-1"
+
+# Git Repository (optional)
+enable_git_commit: false
+git_repo_url: "git@github.com:org/power-reports.git"
+git_branch: "main"
+```
+
+### Documentation
+
+- **📖 AAP Deployment Guide:** [docs/README_AAP.md](docs/README_AAP.md)
+- **📋 Job Template Examples:** [docs/aap_job_templates/](docs/aap_job_templates/)
+- **🔧 Planning Document:** [docs/PLAN_AAP_COMPATIBILITY.md](docs/PLAN_AAP_COMPATIBILITY.md)
+
+### Accessing Reports
+
+**Via AAP API:**
+```bash
+# Get job artifacts
+curl -k -u admin:password \
+  https://aap.example.com/api/v2/jobs/123/artifacts/ \
+  | jq -r '.infrastructure_report_json' \
+  | base64 -d > report.json
+```
+
+**Via S3:**
+```bash
+aws s3 cp s3://power-infrastructure-reports/reports/2026-02-28/hmc01/report.json .
+```
+
+**Via Git:**
+```bash
+git clone git@github.com:org/power-reports.git
+cat power-reports/reports/2026-02-28/hmc01/report.json
+```
+
 
 ## License
 
@@ -278,7 +354,3 @@ MIT License - See LICENSE file for details.
 ## Version History
 
 See [VERSION_HISTORY.md](VERSION_HISTORY.md) for complete version history and release notes.
-  - Single playbook design (no complex roles)
-  - HMC REST API authentication
-  - Managed systems, LPAR, and adapter collection
-  - Multi-format report generation (JSON, CSV, YAML, HTML)

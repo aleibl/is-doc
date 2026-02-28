@@ -1,0 +1,180 @@
+---
+# ============================================================================
+# Report Persistence Orchestration Task
+# ============================================================================
+#
+# Description:
+#   Orchestrates report persistence across all enabled output methods.
+#   Handles graceful degradation if individual methods fail.
+#
+# Output Methods:
+#   1. Local Files - Always enabled (backward compatibility)
+#   2. AAP Artifacts - Auto-enabled in AAP environment
+#   3. S3 Upload - Optional, requires configuration
+#   4. Git Commit - Optional, requires configuration
+#
+# Behavior:
+#   - Each method runs independently
+#   - Failures in one method don't affect others
+#   - Success/failure tracked per method
+#   - Summary report at end
+#
+# Version: See VERSION file in project root
+# ============================================================================
+
+- name: Initialize persistence tracking
+  ansible.builtin.set_fact:
+    local_files_success: false
+    aap_artifacts_success: false
+    s3_upload_success: false
+    git_commit_success: false
+    persistence_methods_attempted: []
+    persistence_methods_succeeded: []
+
+- name: Display persistence configuration
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "Report Persistence Configuration"
+      - "=========================================="
+      - "Local Files: {{ 'Enabled' if enable_local_files | default(true) else 'Disabled' }}"
+      - "AAP Artifacts: {{ 'Enabled' if (enable_aap_artifacts | default('auto') == true or (enable_aap_artifacts | default('auto') == 'auto' and is_aap_environment)) else 'Disabled' }}"
+      - "S3 Upload: {{ 'Enabled' if enable_s3_upload | default(false) else 'Disabled' }}"
+      - "Git Commit: {{ 'Enabled' if enable_git_commit | default(false) else 'Disabled' }}"
+      - "=========================================="
+
+# ============================================
+# Method 1: Local Files
+# ============================================
+- name: Persist reports to local filesystem
+  block:
+    - name: Add local files to attempted methods
+      ansible.builtin.set_fact:
+        persistence_methods_attempted: "{{ persistence_methods_attempted + ['Local Files'] }}"
+    
+    - name: Execute local file persistence
+      ansible.builtin.include_tasks: persist_local.yml
+    
+    - name: Add local files to succeeded methods
+      ansible.builtin.set_fact:
+        persistence_methods_succeeded: "{{ persistence_methods_succeeded + ['Local Files'] }}"
+  rescue:
+    - name: Log local file persistence failure
+      ansible.builtin.debug:
+        msg: "WARNING: Local file persistence failed - {{ ansible_failed_result.msg | default('Unknown error') }}"
+  when: enable_local_files | default(true)
+
+# ============================================
+# Method 2: AAP Artifacts
+# ============================================
+- name: Register reports as AAP artifacts
+  block:
+    - name: Add AAP artifacts to attempted methods
+      ansible.builtin.set_fact:
+        persistence_methods_attempted: "{{ persistence_methods_attempted + ['AAP Artifacts'] }}"
+    
+    - name: Execute AAP artifact registration
+      ansible.builtin.include_tasks: persist_aap_artifacts.yml
+    
+    - name: Add AAP artifacts to succeeded methods
+      ansible.builtin.set_fact:
+        persistence_methods_succeeded: "{{ persistence_methods_succeeded + ['AAP Artifacts'] }}"
+  rescue:
+    - name: Log AAP artifact registration failure
+      ansible.builtin.debug:
+        msg: "WARNING: AAP artifact registration failed - {{ ansible_failed_result.msg | default('Unknown error') }}"
+  when: 
+    - enable_aap_artifacts | default('auto') == true or 
+      (enable_aap_artifacts | default('auto') == 'auto' and is_aap_environment)
+
+# ============================================
+# Method 3: S3 Upload
+# ============================================
+- name: Upload reports to S3
+  block:
+    - name: Add S3 upload to attempted methods
+      ansible.builtin.set_fact:
+        persistence_methods_attempted: "{{ persistence_methods_attempted + ['S3 Upload'] }}"
+    
+    - name: Execute S3 upload
+      ansible.builtin.include_tasks: persist_s3.yml
+    
+    - name: Add S3 upload to succeeded methods
+      ansible.builtin.set_fact:
+        persistence_methods_succeeded: "{{ persistence_methods_succeeded + ['S3 Upload'] }}"
+  rescue:
+    - name: Log S3 upload failure
+      ansible.builtin.debug:
+        msg: "WARNING: S3 upload failed - {{ ansible_failed_result.msg | default('Unknown error') }}"
+    
+    - name: Record S3 failure in stats
+      ansible.builtin.set_stats:
+        data:
+          s3_upload_failed: true
+          s3_upload_error: "{{ ansible_failed_result.msg | default('Unknown error') }}"
+        per_host: false
+      when: is_aap_environment | default(false)
+  when: enable_s3_upload | default(false)
+
+# ============================================
+# Method 4: Git Commit
+# ============================================
+- name: Commit reports to Git repository
+  block:
+    - name: Add Git commit to attempted methods
+      ansible.builtin.set_fact:
+        persistence_methods_attempted: "{{ persistence_methods_attempted + ['Git Commit'] }}"
+    
+    - name: Execute Git commit
+      ansible.builtin.include_tasks: persist_git.yml
+    
+    - name: Add Git commit to succeeded methods
+      ansible.builtin.set_fact:
+        persistence_methods_succeeded: "{{ persistence_methods_succeeded + ['Git Commit'] }}"
+  rescue:
+    - name: Log Git commit failure
+      ansible.builtin.debug:
+        msg: "WARNING: Git commit failed - {{ ansible_failed_result.msg | default('Unknown error') }}"
+    
+    - name: Record Git failure in stats
+      ansible.builtin.set_stats:
+        data:
+          git_commit_failed: true
+          git_commit_error: "{{ ansible_failed_result.msg | default('Unknown error') }}"
+        per_host: false
+      when: is_aap_environment | default(false)
+  when: enable_git_commit | default(false)
+
+# ============================================
+# Summary
+# ============================================
+- name: Calculate persistence success rate
+  ansible.builtin.set_fact:
+    persistence_success_rate: "{{ ((persistence_methods_succeeded | length / persistence_methods_attempted | length) * 100) | round(0) | int }}"
+  when: persistence_methods_attempted | length > 0
+
+- name: Display persistence summary
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "Report Persistence Summary"
+      - "=========================================="
+      - "Methods Attempted: {{ persistence_methods_attempted | length }}"
+      - "Methods Succeeded: {{ persistence_methods_succeeded | length }}"
+      - "Success Rate: {{ persistence_success_rate | default(0) }}%"
+      - ""
+      - "Status by Method:"
+      - "  Local Files: {{ '✓ SUCCESS' if local_files_success else '✗ FAILED' if 'Local Files' in persistence_methods_attempted else '- SKIPPED' }}"
+      - "  AAP Artifacts: {{ '✓ SUCCESS' if aap_artifacts_success else '✗ FAILED' if 'AAP Artifacts' in persistence_methods_attempted else '- SKIPPED' }}"
+      - "  S3 Upload: {{ '✓ SUCCESS' if s3_upload_success else '✗ FAILED' if 'S3 Upload' in persistence_methods_attempted else '- SKIPPED' }}"
+      - "  Git Commit: {{ '✓ SUCCESS' if git_commit_success else '✗ FAILED' if 'Git Commit' in persistence_methods_attempted else '- SKIPPED' }}"
+      - ""
+      - "Overall Status: {{ 'SUCCESS' if persistence_methods_succeeded | length > 0 else 'FAILED' }}"
+      - "=========================================="
+
+- name: Fail if no persistence methods succeeded
+  ansible.builtin.fail:
+    msg: "CRITICAL: All persistence methods failed. Reports may be lost."
+  when: 
+    - persistence_methods_attempted | length > 0
+    - persistence_methods_succeeded | length == 0

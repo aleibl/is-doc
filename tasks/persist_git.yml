@@ -1,0 +1,166 @@
+---
+# ============================================================================
+# Git Repository Persistence Task
+# ============================================================================
+#
+# Description:
+#   Commits generated reports to a Git repository for version control.
+#   Provides audit trail and historical tracking of infrastructure changes.
+#
+# Prerequisites:
+#   - Reports already generated and written to local filesystem
+#   - Git repository configured and accessible
+#   - Git credentials configured (SSH key or HTTPS token)
+#
+# Configuration Required:
+#   - git_repo_url: Git repository URL (SSH or HTTPS)
+#   - git_branch: Target branch for commits
+#
+# Optional Configuration:
+#   - git_local_path: Local clone path (default: /tmp/power-reports-git)
+#   - git_author_name: Commit author name
+#   - git_author_email: Commit author email
+#   - git_commit_message: Commit message template
+#   - git_ssh_key_path: Path to SSH private key
+#
+# Version: See VERSION file in project root
+# ============================================================================
+
+- name: Validate Git configuration
+  ansible.builtin.assert:
+    that:
+      - git_repo_url is defined
+      - git_repo_url | length > 0
+      - git_branch is defined
+    fail_msg: "Git commit enabled but configuration incomplete. Required: git_repo_url, git_branch"
+
+- name: Set default Git local path
+  ansible.builtin.set_fact:
+    git_local_path: "{{ git_local_path | default('/tmp/power-reports-git') }}"
+
+- name: Ensure Git local path exists
+  ansible.builtin.file:
+    path: "{{ git_local_path }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+
+- name: Clone or update Git repository
+  ansible.builtin.git:
+    repo: "{{ git_repo_url }}"
+    dest: "{{ git_local_path }}"
+    version: "{{ git_branch }}"
+    force: true
+    accept_hostkey: true
+  environment:
+    GIT_SSH_COMMAND: "ssh -i {{ git_ssh_key_path }} -o StrictHostKeyChecking=no"
+  when: git_ssh_key_path is defined
+  delegate_to: localhost
+  register: git_clone_result
+  failed_when: false
+
+- name: Clone or update Git repository (HTTPS)
+  ansible.builtin.git:
+    repo: "{{ git_repo_url }}"
+    dest: "{{ git_local_path }}"
+    version: "{{ git_branch }}"
+    force: true
+  when: git_ssh_key_path is not defined
+  delegate_to: localhost
+  register: git_clone_https_result
+  failed_when: false
+
+- name: Ensure report directory exists in Git repo
+  ansible.builtin.file:
+    path: "{{ git_local_path }}/reports/{{ ansible_date_time.date }}/{{ inventory_hostname }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+
+- name: Copy reports to Git repository
+  ansible.builtin.copy:
+    src: "{{ output_dir }}/infrastructure_{{ report_timestamp }}.{{ item }}"
+    dest: "{{ git_local_path }}/reports/{{ ansible_date_time.date }}/{{ inventory_hostname }}/"
+    mode: '0644'
+  loop:
+    - json
+    - csv
+    - yml
+    - html
+  when: 
+    - (item == 'json' and generate_json | default(true)) or
+      (item == 'csv' and generate_csv | default(true)) or
+      (item == 'yml' and generate_yaml | default(true)) or
+      (item == 'html' and generate_html | default(true))
+  delegate_to: localhost
+
+- name: Configure Git user
+  ansible.builtin.shell: |
+    cd {{ git_local_path }}
+    git config user.name "{{ git_author_name | default('Ansible Automation') }}"
+    git config user.email "{{ git_author_email | default('ansible@example.com') }}"
+  changed_when: false
+  delegate_to: localhost
+
+- name: Check for changes
+  ansible.builtin.shell: |
+    cd {{ git_local_path }}
+    git status --porcelain reports/
+  register: git_status
+  changed_when: false
+  delegate_to: localhost
+
+- name: Commit reports
+  ansible.builtin.shell: |
+    cd {{ git_local_path }}
+    git add reports/
+    git commit -m "{{ git_commit_message | default('Infrastructure report ' + report_timestamp + ' from ' + inventory_hostname) }}"
+  register: git_commit_result
+  changed_when: "'nothing to commit' not in git_commit_result.stdout"
+  when: git_status.stdout | length > 0
+  delegate_to: localhost
+
+- name: Push to remote repository (SSH)
+  ansible.builtin.shell: |
+    cd {{ git_local_path }}
+    git push origin {{ git_branch }}
+  environment:
+    GIT_SSH_COMMAND: "ssh -i {{ git_ssh_key_path }} -o StrictHostKeyChecking=no"
+  when: 
+    - git_commit_result.changed | default(false)
+    - git_ssh_key_path is defined
+  delegate_to: localhost
+  register: git_push_result
+
+- name: Push to remote repository (HTTPS)
+  ansible.builtin.shell: |
+    cd {{ git_local_path }}
+    git push origin {{ git_branch }}
+  when: 
+    - git_commit_result.changed | default(false)
+    - git_ssh_key_path is not defined
+  delegate_to: localhost
+  register: git_push_https_result
+
+- name: Set Git commit success flag
+  ansible.builtin.set_fact:
+    git_commit_success: true
+
+- name: Display Git commit summary
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "Git Repository Commit"
+      - "=========================================="
+      - "Status: SUCCESS"
+      - "Repository: {{ git_repo_url }}"
+      - "Branch: {{ git_branch }}"
+      - "Local Path: {{ git_local_path }}"
+      - "Changes Committed: {{ 'Yes' if git_commit_result.changed | default(false) else 'No (no changes)' }}"
+      - "Changes Pushed: {{ 'Yes' if (git_push_result.changed | default(false) or git_push_https_result.changed | default(false)) else 'No' }}"
+      - "Report Path: reports/{{ ansible_date_time.date }}/{{ inventory_hostname }}/"
+      - ""
+      - "View reports:"
+      - "  cd {{ git_local_path }}"
+      - "  git log --oneline reports/"
+      - "=========================================="

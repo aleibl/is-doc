@@ -28,3 +28,44 @@ report_timestamp_format: "%Y-%m-%d_%H-%M-%S"
 # Retry settings for API calls
 api_retries: 3
 api_retry_delay: 5
+
+# ============================================================================
+# Output Persistence Configuration (AAP Compatibility)
+# ============================================================================
+
+# Environment Detection
+# Set to true to force AAP behavior even in CLI environment (for testing)
+force_aap_mode: false
+
+# Local Files (Always recommended, maintains backward compatibility)
+enable_local_files: true
+output_dir: "./output/reports"
+
+# AAP Artifacts (Automatic in AAP environment)
+# Options: auto (detect environment), true (always enable), false (disable)
+enable_aap_artifacts: auto
+aap_artifact_formats:
+  - json    # Always include for programmatic access
+  - csv     # Include for spreadsheet import
+  - yml     # Include for Ansible consumption
+  - html    # Include for human viewing
+
+# S3 Upload (Optional - requires configuration)
+enable_s3_upload: false
+# s3_bucket: "power-infrastructure-reports"
+# s3_region: "us-east-1"
+# s3_path_prefix: "reports/{{ ansible_date_time.date }}"
+# s3_endpoint_url: ""  # Leave empty for AWS S3, set for MinIO
+# s3_encryption: true
+# s3_storage_class: "STANDARD"  # STANDARD, INTELLIGENT_TIERING, GLACIER
+# s3_acl: "private"
+
+# Git Repository (Optional - requires configuration)
+enable_git_commit: false
+# git_repo_url: "git@github.com:org/power-reports.git"
+# git_branch: "main"
+# git_local_path: "/tmp/power-reports-git"
+# git_author_name: "Ansible Automation"
+# git_author_email: "ansible@example.com"
+# git_commit_message: "Infrastructure report {{ report_timestamp }} from {{ inventory_hostname }}"
+# git_ssh_key_path: "{{ lookup('env', 'HOME') }}/.ssh/id_rsa"
