@@ -55,14 +55,19 @@ ansible-galaxy collection install ibm.power_hmc
 
 ```bash
 # Collect from all HMCs using CLI commands
-ansible-playbook collect_infrastructure_hmc_cli.yml
+ansible-playbook -i inventory/hosts.yml collect_infrastructure_hmc_cli.yml --ask-vault-pass
 
 # Collect from specific HMC
-ansible-playbook collect_infrastructure_hmc_cli.yml --limit hmc01.example.com
+ansible-playbook -i inventory/hosts.yml collect_infrastructure_hmc_cli.yml --ask-vault-pass --limit hmc01.example.com
+
+# With vault password file
+ansible-playbook -i inventory/hosts.yml collect_infrastructure_hmc_cli.yml --vault-password-file .vault_pass
 
 # Verbose output
-ansible-playbook collect_infrastructure_hmc_cli.yml -v
+ansible-playbook -i inventory/hosts.yml collect_infrastructure_hmc_cli.yml --ask-vault-pass -v
 ```
+
+**Note:** Always use the `-i` flag to specify inventory. This ensures compatibility with both CLI and AAP environments.
 
 ## HMC CLI Commands Used
 

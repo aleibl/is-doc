@@ -36,9 +36,12 @@ Each mode has different configuration requirements.
 **ansible.cfg:**
 ```ini
 [defaults]
-# Uncomment for CLI usage
-inventory = inventory/hosts.yml
-# vault_password_file = .vault_pass  # Optional
+host_key_checking = False
+timeout = 30
+gathering = explicit
+
+# Note: No inventory line - specify with -i flag for CLI
+# Note: No vault_password_file - use --ask-vault-pass for CLI
 ```
 
 **inventory/hosts.yml:**
@@ -76,15 +79,20 @@ ansible-vault encrypt vars/vault.yml
 ### 3. Run Playbook
 
 ```bash
+# Standard CLI execution (recommended)
+ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --ask-vault-pass
+
 # With vault password file
-ansible-playbook collect_infrastructure.yml
+ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --vault-password-file .vault_pass
 
-# Or prompt for vault password
-ansible-playbook collect_infrastructure.yml --ask-vault-pass
+# With specific HMC limit
+ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --ask-vault-pass --limit hmc01.example.com
 
-# Or specify inventory explicitly
-ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml
+# With extra variables
+ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --ask-vault-pass -e "output_dir=/tmp/reports"
 ```
+
+**Note:** Always use the `-i` flag to specify inventory when running from CLI.
 
 ### 4. View Results
 
@@ -105,12 +113,15 @@ ls -l output/reports/
 **ansible.cfg:**
 ```ini
 [defaults]
-# Comment out for AAP usage
-# inventory = inventory/hosts.yml
-# vault_password_file = .vault_pass
+host_key_checking = False
+timeout = 30
+gathering = explicit
+
+# No inventory line - AAP manages inventory in UI
+# No vault_password_file - AAP manages credentials
 ```
 
-**Note:** The `inventory/hosts.yml` and `vars/vault.yml` files are NOT used in AAP mode.
+**Note:** The same minimal ansible.cfg works for both CLI and AAP. The `inventory/hosts.yml` and `vars/vault.yml` files are NOT used in AAP mode.
 
 ### 2. AAP Configuration
 
@@ -177,16 +188,19 @@ ls -l output/reports/
 
 ### Configuration File Handling
 
-**ansible.cfg:**
+**ansible.cfg (Universal - Works for Both):**
 ```ini
-# For CLI: Uncomment these lines
-inventory = inventory/hosts.yml
-vault_password_file = .vault_pass
-
-# For AAP: Comment out these lines
-# inventory = inventory/hosts.yml
-# vault_password_file = .vault_pass
+[defaults]
+host_key_checking = False
+timeout = 30
+gathering = explicit
 ```
+
+**Key Points:**
+- No `inventory` line - specify with `-i` flag for CLI, managed in UI for AAP
+- No `vault_password_file` - use `--ask-vault-pass` for CLI, credentials in UI for AAP
+- No `[inventory]` section - causes conflicts with AAP
+- Minimal configuration works universally
 
 **Playbooks (v1.2.0.0+):**
 - Automatically detect execution environment
@@ -213,9 +227,8 @@ vault_password_file = .vault_pass
    - Extract credentials from `vars/vault.yml`
    - Create in AAP UI
 
-4. **Update ansible.cfg** (if needed)
-   - Comment out `inventory` line
-   - Comment out `vault_password_file` line
+4. **No ansible.cfg changes needed**
+   - The minimal ansible.cfg works for both!
 
 5. **Create job template**
    - Configure in AAP UI
@@ -223,9 +236,8 @@ vault_password_file = .vault_pass
 
 ### From AAP to CLI
 
-1. **Update ansible.cfg**
-   - Uncomment `inventory = inventory/hosts.yml`
-   - Optionally uncomment `vault_password_file`
+1. **No ansible.cfg changes needed**
+   - The minimal ansible.cfg works for both!
 
 2. **Ensure inventory file exists**
    - Verify `inventory/hosts.yml` is present
@@ -237,9 +249,9 @@ vault_password_file = .vault_pass
    - Update credentials
    - Re-encrypt: `ansible-vault encrypt vars/vault.yml`
 
-4. **Run from CLI**
+4. **Run from CLI with -i flag**
    ```bash
-   ansible-playbook collect_infrastructure.yml
+   ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --ask-vault-pass
    ```
 
 ---
@@ -251,24 +263,25 @@ vault_password_file = .vault_pass
 **In AAP:**
 - Ensure inventory is created in AAP UI
 - Do NOT use project inventory file
-- Comment out `inventory` line in ansible.cfg
+- Ensure ansible.cfg has NO `inventory` line
+- Ensure ansible.cfg has NO `[inventory]` section
 
 **In CLI:**
 - Ensure `inventory/hosts.yml` exists
-- Uncomment `inventory` line in ansible.cfg
-- Or use `-i` flag: `ansible-playbook -i inventory/hosts.yml ...`
+- Always use `-i` flag: `ansible-playbook -i inventory/hosts.yml ...`
+- Do NOT add `inventory` line to ansible.cfg (causes AAP conflicts)
 
 ### Issue: "Vault password file not found"
 
 **In AAP:**
 - This is expected - AAP doesn't use vault files
-- Ensure ansible.cfg has `vault_password_file` commented out
+- Ensure ansible.cfg has NO `vault_password_file` line
 - Use AAP credentials instead
 
 **In CLI:**
-- Create `.vault_pass` file with vault password
-- Or use `--ask-vault-pass` flag
-- Or set `ANSIBLE_VAULT_PASSWORD_FILE` environment variable
+- Always use `--ask-vault-pass` flag (recommended)
+- Or use `--vault-password-file .vault_pass`
+- Do NOT add `vault_password_file` to ansible.cfg (causes AAP conflicts)
 
 ### Issue: "hmc_username is undefined"
 
@@ -298,10 +311,15 @@ vault_password_file = .vault_pass
    - Document inventory changes
    - Use branches for different environments
 
-3. **Automate with cron**
+3. **Always use -i flag**
+   - Explicit inventory specification is best practice
+   - Prevents conflicts with AAP
+   - Makes commands self-documenting
+
+4. **Automate with cron**
    ```bash
    # Daily collection at 2 AM
-   0 2 * * * cd /path/to/project && ansible-playbook collect_infrastructure.yml
+   0 2 * * * cd /path/to/project && ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --vault-password-file .vault_pass
    ```
 
 ### For AAP Usage
@@ -325,62 +343,29 @@ vault_password_file = .vault_pass
 
 ## Configuration File Templates
 
-### ansible.cfg for CLI
+### ansible.cfg (Universal - Works for Both CLI and AAP)
 
 ```ini
 [defaults]
-inventory = inventory/hosts.yml
 host_key_checking = False
-vault_password_file = .vault_pass
-stdout_callback = default
 timeout = 30
 gathering = explicit
-log_path = ./ansible.log
-
-[inventory]
-enable_plugins = yaml, ini
 ```
 
-### ansible.cfg for AAP
+**That's it!** This minimal configuration:
+- ✅ Works perfectly in CLI (use `-i` flag for inventory)
+- ✅ Works perfectly in AAP (inventory from UI)
+- ✅ No conflicts or compatibility issues
+- ✅ No `[inventory]` section (causes AAP parse errors)
+- ✅ No `inventory` line (use `-i` flag instead)
+- ✅ No `vault_password_file` (use `--ask-vault-pass` instead)
 
-```ini
-[defaults]
-# inventory = inventory/hosts.yml  # Commented for AAP
-host_key_checking = False
-# vault_password_file = .vault_pass  # Commented for AAP
-stdout_callback = default
-timeout = 30
-gathering = explicit
-# log_path = ./ansible.log  # Not used in AAP
-
-[inventory]
-enable_plugins = yaml, ini
-```
-
-### ansible.cfg for Both (Recommended)
-
-```ini
-[defaults]
-# Inventory configuration
-# Note: For AAP, inventory is managed in AAP UI
-# For CLI, uncomment the line below or use -i flag
-# inventory = inventory/hosts.yml
-
-host_key_checking = False
-
-# Vault configuration
-# Note: For AAP, use AAP's credential system
-# For CLI with vault, use --ask-vault-pass or set ANSIBLE_VAULT_PASSWORD_FILE
-# vault_password_file = .vault_pass
-
-stdout_callback = default
-timeout = 30
-gathering = explicit
-log_path = ./ansible.log
-
-[inventory]
-enable_plugins = yaml, ini
-```
+**Why minimal is better:**
+- Explicit inventory specification (`-i` flag) is best practice
+- Prevents AAP inventory parsing conflicts
+- Makes commands self-documenting
+- Easier to maintain
+- Works universally
 
 ---
 
@@ -388,13 +373,17 @@ enable_plugins = yaml, ini
 
 | Configuration | CLI Mode | AAP Mode |
 |---------------|----------|----------|
-| **ansible.cfg inventory** | Uncommented | Commented |
-| **ansible.cfg vault_password_file** | Optional | Commented |
-| **inventory/hosts.yml** | Required | Not used |
+| **ansible.cfg** | Same minimal config | Same minimal config |
+| **Inventory specification** | `-i inventory/hosts.yml` flag | Managed in AAP UI |
+| **Credentials** | `--ask-vault-pass` flag | AAP Credentials |
+| **inventory/hosts.yml** | Required (for `-i` flag) | Not used |
 | **vars/vault.yml** | Required | Not used |
 | **AAP Inventory** | Not used | Required |
 | **AAP Credentials** | Not used | Required |
 | **Playbook changes** | None (auto-detect) | None (auto-detect) |
+| **Command** | `ansible-playbook -i ... --ask-vault-pass` | Click "Launch" in AAP |
+
+**Key Insight:** The same minimal ansible.cfg works for both modes! The difference is in how you specify inventory and credentials (command-line flags for CLI, UI configuration for AAP).
 
 **The playbooks (v1.2.0.0+) automatically detect the execution environment and adapt accordingly. No manual playbook changes are needed when switching between CLI and AAP modes.**
 

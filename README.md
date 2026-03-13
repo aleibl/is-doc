@@ -110,23 +110,80 @@ ansible-vault encrypt vars/vault.yml
 **REST API Version (Recommended):**
 ```bash
 # Collect infrastructure from all HMCs
-ansible-playbook collect_infrastructure.yml
+ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --ask-vault-pass
 
 # Collect from a specific HMC
-ansible-playbook collect_infrastructure.yml --limit hmc01.example.com
+ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --ask-vault-pass --limit hmc01.example.com
+
+# With vault password file
+ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --vault-password-file .vault_pass
 
 # Run with verbose output
-ansible-playbook collect_infrastructure.yml -v
+ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --ask-vault-pass -v
 ```
 
 **HMC CLI Version (Alternative):**
 ```bash
 # Collect using HMC CLI commands
-ansible-playbook collect_infrastructure_hmc_cli.yml
+ansible-playbook -i inventory/hosts.yml collect_infrastructure_hmc_cli.yml --ask-vault-pass
 
 # Collect from a specific HMC
-ansible-playbook collect_infrastructure_hmc_cli.yml --limit hmc01.example.com
+ansible-playbook -i inventory/hosts.yml collect_infrastructure_hmc_cli.yml --ask-vault-pass --limit hmc01.example.com
 ```
+
+**Note:** Always use the `-i` flag to specify inventory. This ensures compatibility with both CLI and AAP environments.
+
+### Understanding Host Patterns and the --limit Flag
+
+The playbooks use `hosts: hmcs` which targets the `hmcs` group in your inventory. This design provides:
+
+**Benefits:**
+- **Organization**: Group-based configuration via `inventory/group_vars/hmcs.yml`
+- **Scalability**: Easy to add/remove HMCs from the group
+- **Maintainability**: Centralized HMC-specific settings
+- **Flexibility**: Can override with `--limit` flag
+
+**Running Against Hosts Not in the hmcs Group:**
+
+If you have hosts in your inventory that are NOT in the `hmcs` group, you can still run the playbook against them using the `--limit` flag:
+
+```bash
+# Run against a specific host (even if not in hmcs group)
+ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --ask-vault-pass --limit other-hmc.example.com
+
+# Run against multiple specific hosts
+ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --ask-vault-pass --limit "hmc01.example.com,other-hmc.example.com"
+
+# Run against a different group
+ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml --ask-vault-pass --limit dev_hmcs
+```
+
+**How it Works:**
+1. The playbook declares `hosts: hmcs` as the default target
+2. The `--limit` flag overrides this and restricts execution to specified hosts/groups
+3. The host(s) specified in `--limit` must exist in your inventory
+4. Group variables from `group_vars/hmcs.yml` are still applied if the host is in that group
+
+**Example Inventory with Multiple Groups:**
+```yaml
+all:
+  children:
+    hmcs:
+      hosts:
+        hmc01.example.com:
+        hmc02.example.com:
+    dev_hmcs:
+      hosts:
+        hmc-dev.example.com:
+    test_hmcs:
+      hosts:
+        hmc-test.example.com:
+```
+
+With this inventory:
+- `ansible-playbook ... collect_infrastructure.yml` → Runs against hmc01 and hmc02 (hmcs group)
+- `ansible-playbook ... collect_infrastructure.yml --limit dev_hmcs` → Runs against hmc-dev only
+- `ansible-playbook ... collect_infrastructure.yml --limit hmc-test.example.com` → Runs against hmc-test only
 
 ## Configuration
 
@@ -142,9 +199,40 @@ hmc_credentials:
     password: "your_password"
 ```
 
-### Group Variables (inventory/group_vars/hmcs.yml)
+### Group Variables: Two Locations, Same Effect
 
+Variables for the `hmcs` group can be defined in **two locations** with identical effect:
+
+1. **Inline in inventory** (`inventory/hosts.yml` under `vars:`)
+2. **Separate file** (`inventory/group_vars/hmcs.yml`)
+
+Both have the **same precedence level** and you can move variables between them without changing behavior.
+
+#### Current Organization (Recommended)
+
+**inventory/hosts.yml** - Connection and infrastructure settings:
 ```yaml
+hmcs:
+  hosts:
+    hmc01.example.com:
+      ansible_host: 192.168.1.10
+      hmc_description: "Production HMC"
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: /usr/bin/python3
+    hmc_port: 12443
+    hmc_api_base: "/rest/api"
+    hmc_validate_certs: true
+    hmc_timeout: 60
+    output_dir: "{{ playbook_dir }}/../output/reports"
+```
+
+**inventory/group_vars/hmcs.yml** - Application and playbook settings:
+```yaml
+# HMC API Configuration
+hmc_api_version: "web"
+hmc_content_type: "application/vnd.ibm.powervm.web+xml"
+
 # Collection settings
 collect_managed_systems: true
 collect_lpars: true
@@ -156,11 +244,78 @@ generate_csv: true
 generate_yaml: true
 generate_html: true
 
-# API settings
+# Output persistence (AAP compatibility)
+enable_local_files: true
+enable_aap_artifacts: auto
+enable_s3_upload: false
+enable_git_commit: false
+```
+
+#### Best Practices
+
+**Use inline vars (hosts.yml) for:**
+- Connection settings (`ansible_connection`, `ansible_host`)
+- Infrastructure basics (`hmc_port`, `hmc_timeout`)
+- Settings that rarely change
+
+**Use group_vars file for:**
+- Application-specific settings
+- Feature toggles (`collect_*`, `generate_*`)
+- Complex configurations (AAP output, S3, Git)
+- Settings that change frequently
+
+**Consolidation Option:**
+You can move all vars to `group_vars/hmcs.yml` and remove the `vars:` section from `hosts.yml` entirely. This is cleaner for large configurations.
+
+#### Configuring in AAP
+
+In Ansible Automation Platform, you configure these differently:
+
+**1. Inventory Variables (replaces hosts.yml vars):**
+- Navigate to: **Inventories** → Select inventory → **Groups** → `hmcs` → **Variables**
+- Add in YAML format:
+```yaml
+ansible_connection: local
+ansible_python_interpreter: /usr/bin/python3
+hmc_port: 12443
 hmc_validate_certs: true
 hmc_timeout: 60
-api_retries: 3
 ```
+
+**2. Project Files (group_vars/hmcs.yml):**
+- Synced automatically from your Git repository
+- AAP reads `inventory/group_vars/hmcs.yml` from the project
+- No manual configuration needed
+
+**3. Variable Precedence in AAP:**
+Both locations work identically in AAP:
+- Group variables from project files (group_vars/)
+- Group variables from AAP inventory UI
+- Both have the same precedence level
+- AAP merges them automatically
+
+**4. AAP Best Practice:**
+- **Connection settings** → AAP Inventory UI (easier to manage per environment)
+- **Application settings** → Project files (version controlled, consistent across environments)
+
+**Example AAP Setup:**
+
+1. **Create Inventory in AAP:**
+   - Name: `Power Systems HMCs`
+   - Add hosts: `hmc01.example.com`, `hmc02.example.com`
+   - Create group: `hmcs`
+   - Add hosts to group
+
+2. **Set Group Variables in AAP UI:**
+   ```yaml
+   ansible_connection: local
+   hmc_port: 12443
+   hmc_timeout: 60
+   ```
+
+3. **Sync Project** (pulls group_vars/hmcs.yml automatically)
+
+4. **Result:** Variables from both locations are merged and applied to all hosts in the `hmcs` group
 
 ## Output Reports
 

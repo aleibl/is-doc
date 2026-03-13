@@ -150,26 +150,28 @@ After job completion, artifacts are available:
 ERROR! No inventory was parsed, please check your configuration and options.
 ```
 
-**Cause:** AAP is trying to use the project's inventory file instead of AAP-managed inventory.
+**Root Cause:** The `[inventory]` section in ansible.cfg causes AAP to fail parsing inventory.
 
 **Fix:**
-1. **Create inventory in AAP UI** (not from project)
-   - Resources → Inventories → Add → Inventory
-   - Do NOT use "Source from Project"
+1. **Ensure ansible.cfg is minimal** (should be in v1.2.0.0+)
+   ```ini
+   [defaults]
+   host_key_checking = False
+   timeout = 30
+   gathering = explicit
+   ```
    
-2. **Manually add hosts in AAP**
-   - Click **Hosts** tab → Add
-   - Enter hostname and variables
+2. **NO `[inventory]` section** - This causes the parse error!
+
+3. **Sync project in AAP** after ansible.cfg changes
+   - Resources → Projects → Your Project → Sync
    
-3. **Update Job Template**
-   - Ensure job template uses the AAP inventory (not project inventory)
-   - Inventory field should show your AAP inventory name
+4. **Verify inventory in AAP UI**
+   - Resources → Inventories → Your Inventory
+   - Should have hosts added manually
+   - Should have NO sources configured
 
-4. **Verify ansible.cfg**
-   - Comment out `inventory = inventory/hosts.yml` in ansible.cfg
-   - Or ensure job template overrides it
-
-**Important:** The `inventory/hosts.yml` file in the project is for CLI use only. AAP requires inventory to be managed through the AAP UI.
+**Important:** The minimal ansible.cfg (without `[inventory]` section) is required for AAP compatibility.
 
 ### Issue 2: Vault Password Error
 

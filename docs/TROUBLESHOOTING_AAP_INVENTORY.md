@@ -1,8 +1,8 @@
 # AAP Inventory Troubleshooting Guide
 ## IBM Power Systems Infrastructure Collection
 
-**Version:** 1.2.0.0  
-**Last Updated:** 2026-03-13  
+**Version:** 1.2.0.0
+**Last Updated:** 2026-03-13
 **Issue:** Inventory parse errors in AAP
 
 ---
@@ -15,8 +15,11 @@
 ERROR! No inventory was parsed, please check your configuration and options.
 ```
 
-**What This Means:**
-AAP is trying to parse the project's `inventory/hosts.yml` file instead of using the AAP-managed inventory.
+**Root Cause:**
+The `[inventory]` section in ansible.cfg causes AAP to fail when parsing its internally-generated inventory file.
+
+**Solution:**
+Remove the `[inventory]` section from ansible.cfg completely.
 
 ---
 
@@ -105,15 +108,22 @@ AAP is trying to parse the project's `inventory/hosts.yml` file instead of using
    - In AAP, go to your project
    - View files (if possible) or check in Git
 
-2. **Verify ansible.cfg Content**
+2. **Verify ansible.cfg Content (CRITICAL!)**
    ```ini
    [defaults]
-   # inventory = inventory/hosts.yml  ← Should be commented
-   # vault_password_file = .vault_pass  ← Should be commented
+   host_key_checking = False
+   timeout = 30
+   gathering = explicit
    ```
 
-3. **If Not Commented**
-   - Update in Git repository
+3. **Must NOT Have:**
+   - ❌ `inventory = inventory/hosts.yml` line
+   - ❌ `vault_password_file = .vault_pass` line
+   - ❌ `[inventory]` section ← **This causes the parse error!**
+
+4. **If ansible.cfg has `[inventory]` section:**
+   - Remove it completely from ansible.cfg
+   - Commit and push to Git
    - Sync project in AAP
    - Try again
 
