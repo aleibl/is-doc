@@ -217,6 +217,41 @@ all:
 
 3. The updated playbooks (v1.2.0.0+) automatically handle this
 
+### Error: "Failed to parse /runner/inventory/hosts"
+
+**Full Error:**
+```
+[WARNING]: * Failed to parse /runner/inventory/hosts with yaml plugin
+ERROR! No inventory was parsed, please check your configuration and options.
+```
+
+**Cause:** AAP is trying to use the project's `inventory/hosts.yml` file, which is for CLI use only.
+
+**Solutions:**
+
+1. **Create Inventory in AAP UI** (Correct approach)
+   - Resources → Inventories → Add → Inventory
+   - **Do NOT** use "Source from Project"
+   - Manually add hosts in AAP UI
+   - See [Step-by-Step Setup](#step-by-step-setup)
+
+2. **Verify ansible.cfg**
+   - Ensure `inventory = inventory/hosts.yml` is commented out
+   - Version 1.2.0.0+ has this fixed
+   - If using older version, comment out the line
+
+3. **Check Job Template**
+   - Ensure job template uses AAP-managed inventory
+   - Not project inventory
+
+4. **For CLI Usage**
+   - Uncomment `inventory = inventory/hosts.yml` in ansible.cfg
+   - Or use: `ansible-playbook -i inventory/hosts.yml collect_infrastructure.yml`
+
+**Important:** AAP and CLI use different inventory management approaches:
+- **AAP:** Inventory managed in AAP UI
+- **CLI:** Inventory from `inventory/hosts.yml` file
+
 ### Error: "hmc_username is undefined"
 
 **Cause:** Credentials not properly injected or playbook not detecting AAP environment.

@@ -42,14 +42,17 @@
 
 ### Step 3: Create Inventory (1 min)
 
+**IMPORTANT:** In AAP, you must create inventory manually in the AAP UI, not use the project's inventory file.
+
 1. **Create Inventory**
    - Resources → Inventories → Add → Inventory
    - **Name:** `Power Systems Infrastructure`
+   - **Organization:** Your organization
    - Click **Save**
 
 2. **Add HMC Host**
    - Click **Hosts** tab → Add
-   - **Name:** `hmc01.example.com`
+   - **Name:** `hmc01.example.com` (or your HMC hostname)
    - **Variables:**
    ```yaml
    ---
@@ -58,6 +61,16 @@
    hmc_validate_certs: false
    ```
    - Click **Save**
+
+3. **Add to Group (Optional but Recommended)**
+   - Click **Groups** tab → Add
+   - **Name:** `hmcs`
+   - Click **Save**
+   - Click on the group → **Hosts** tab → Add existing host
+   - Select `hmc01.example.com`
+   - Click **Save**
+
+**Note:** Do NOT use "Source from Project" for inventory. The project's `inventory/hosts.yml` is for CLI use only.
 
 ### Step 4: Create Job Template (2 min)
 
@@ -129,7 +142,36 @@ After job completion, artifacts are available:
 
 ## 🔧 Common Issues & Quick Fixes
 
-### Issue 1: Vault Password Error
+### Issue 1: Inventory Parse Error
+
+**Error:**
+```
+[WARNING]: * Failed to parse /runner/inventory/hosts with yaml plugin
+ERROR! No inventory was parsed, please check your configuration and options.
+```
+
+**Cause:** AAP is trying to use the project's inventory file instead of AAP-managed inventory.
+
+**Fix:**
+1. **Create inventory in AAP UI** (not from project)
+   - Resources → Inventories → Add → Inventory
+   - Do NOT use "Source from Project"
+   
+2. **Manually add hosts in AAP**
+   - Click **Hosts** tab → Add
+   - Enter hostname and variables
+   
+3. **Update Job Template**
+   - Ensure job template uses the AAP inventory (not project inventory)
+   - Inventory field should show your AAP inventory name
+
+4. **Verify ansible.cfg**
+   - Comment out `inventory = inventory/hosts.yml` in ansible.cfg
+   - Or ensure job template overrides it
+
+**Important:** The `inventory/hosts.yml` file in the project is for CLI use only. AAP requires inventory to be managed through the AAP UI.
+
+### Issue 2: Vault Password Error
 
 **Error:**
 ```
