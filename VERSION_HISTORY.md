@@ -121,9 +121,3 @@ Technical Details:
 - Dynamic version reading in playbooks
 - Ansible 2.9+ compatible
 - Python 3.6+ compatible
-
----
-
-### 0.x.x.x
-
-Pre-release versions - not for production use.

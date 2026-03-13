@@ -4,8 +4,8 @@
 
 collections:
   # Core Ansible collections
-  - name: ansible.builtin
-    version: ">=2.10.0"
+  # - name: ansible.builtin
+  #   version: ">=2.10.0"
   
   # Community general collection for additional modules
   - name: community.general
@@ -18,5 +18,5 @@ collections:
   
   # Amazon AWS collection (for S3 upload functionality)
   # Required only if enable_s3_upload is true
-  - name: amazon.aws
-    version: ">=5.0.0"
+  # - name: amazon.aws
+  #   version: ">=5.0.0"

@@ -97,15 +97,39 @@
   collections:
     - ibm.power_hmc
   
-  vars_files:
-    - vars/vault.yml
-  
   vars:
     project_version: "{{ lookup('file', 'VERSION') | trim }}"
     collection_timestamp: "{{ ansible_facts['date_time']['iso8601'] }}"
     report_timestamp: "{{ ansible_facts['date_time']['date'] }}_{{ ansible_facts['date_time']['time'] | replace(':', '-') }}"
     
   tasks:
+    # ============================================
+    # Environment Detection & Credential Setup
+    # ============================================
+    - name: Detect execution environment
+      include_tasks: tasks/detect_environment.yml
+
+    - name: Load vault credentials (CLI mode only)
+      block:
+        - name: Include vault file
+          include_vars:
+            file: vars/vault.yml
+          no_log: true
+        
+        - name: Set HMC credentials from vault
+          ansible.builtin.set_fact:
+            hmc_username: "{{ hmc_credentials[inventory_hostname].username }}"
+            hmc_password: "{{ hmc_credentials[inventory_hostname].password }}"
+          no_log: true
+      when: not is_aap_environment
+
+    - name: Use AAP credentials (AAP mode)
+      ansible.builtin.set_fact:
+        hmc_username: "{{ lookup('env', 'HMC_USERNAME') | default(hmc_username | default('')) }}"
+        hmc_password: "{{ lookup('env', 'HMC_PASSWORD') | default(hmc_password | default('')) }}"
+      no_log: true
+      when: is_aap_environment
+
     # ============================================
     # Pre-flight checks
     # ============================================
@@ -114,6 +138,7 @@
         msg:
           - "Starting infrastructure collection from HMC: {{ inventory_hostname }}"
           - "Method: HMC CLI commands via ibm.power_hmc collection"
+          - "Execution environment: {{ 'AAP' if is_aap_environment else 'CLI' }}"
           - "Timestamp: {{ collection_timestamp }}"
           - "Output directory: {{ output_dir }}"
     

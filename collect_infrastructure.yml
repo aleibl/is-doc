@@ -72,9 +72,6 @@
   hosts: hmcs
   gather_facts: false
   
-  vars_files:
-    - vars/vault.yml
-  
   vars:
     project_version: "{{ lookup('file', 'VERSION') | trim }}"
     collection_timestamp: "{{ ansible_facts['date_time']['iso8601'] }}"
@@ -84,12 +81,40 @@
     
   tasks:
     # ============================================
+    # Environment Detection & Credential Setup
+    # ============================================
+    - name: Detect execution environment
+      include_tasks: tasks/detect_environment.yml
+
+    - name: Load vault credentials (CLI mode only)
+      block:
+        - name: Include vault file
+          include_vars:
+            file: vars/vault.yml
+          no_log: true
+        
+        - name: Set HMC credentials from vault
+          ansible.builtin.set_fact:
+            hmc_username: "{{ hmc_credentials[inventory_hostname].username }}"
+            hmc_password: "{{ hmc_credentials[inventory_hostname].password }}"
+          no_log: true
+      when: not is_aap_environment
+
+    - name: Use AAP credentials (AAP mode)
+      ansible.builtin.set_fact:
+        hmc_username: "{{ lookup('env', 'HMC_USERNAME') | default(hmc_username | default('')) }}"
+        hmc_password: "{{ lookup('env', 'HMC_PASSWORD') | default(hmc_password | default('')) }}"
+      no_log: true
+      when: is_aap_environment
+
+    # ============================================
     # Pre-flight checks
     # ============================================
     - name: Display collection start information
       ansible.builtin.debug:
         msg:
           - "Starting infrastructure collection from HMC: {{ inventory_hostname }}"
+          - "Execution environment: {{ 'AAP' if is_aap_environment else 'CLI' }}"
           - "Timestamp: {{ collection_timestamp }}"
           - "Output directory: {{ output_dir }}"
     
@@ -104,11 +129,6 @@
     # ============================================
     # HMC Authentication
     # ============================================
-    - name: Set HMC credentials from vault
-      ansible.builtin.set_fact:
-        hmc_username: "{{ hmc_credentials[inventory_hostname].username }}"
-        hmc_password: "{{ hmc_credentials[inventory_hostname].password }}"
-      no_log: true
 
     - name: Authenticate to HMC REST API
       ansible.builtin.uri:
